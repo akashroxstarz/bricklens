@@ -25,19 +25,29 @@ PARTS = [
     Brick2X4,
 ]
 
-COLORS = list(ColoursByCode.values())
+
+def gen_colors(num_colors: int) -> List[Any]:
+    retval = []
+    all_colors = list(ColoursByName)
+    for index in range(num_colors):
+        colorname = all_colors[index]
+        retval.append(ColoursByName[colorname])
+    return retval
+
+
+# { <2000, 1700, 0>, <1,.8,.4>
+
+# light_source
+# { <2000, 1700, 0>, <1,1,1>
+#  fade_distance 1000 fade_power 2
+#  area_light x*70, y*70, 20, 20 circular orient adaptive 0 jitter
+# }
 
 
 POV_TRAILER = """
 light_source
-{ <0, 1900, 0>, 1
-  fade_distance 1600 fade_power 2
-  area_light x*70, y*70, 20, 20 circular orient adaptive 0 jitter
-}
-
-light_source
-{ <2000, 1700, 0>, <1,.8,.4>
-  fade_distance 1000 fade_power 2
+{ <0, 1900, 0>, 1.0
+  fade_distance 1900 fade_power 2
   area_light x*70, y*70, 20, 20 circular orient adaptive 0 jitter
 }
 
@@ -58,7 +68,7 @@ def gen_parts(
     x_range: Tuple[int, int] = (-500, 2000),
     y_range: Tuple[int, int] = (0, 100),
     z_range: Tuple[int, int] = (-500, 2000),
-):
+) -> List[Any]:
     """Generate a POVRay scene with `num_parts` random parts in a pile."""
     retval = []
     for _ in range(num_parts):
@@ -110,20 +120,30 @@ def main():
         "--width",
         help="Width in pixels of output image.",
         default=1024,
+        type=int,
     )
     parser.add_argument(
         "--height",
         help="Height in pixels of output image.",
         default=768,
+        type=int,
     )
     parser.add_argument(
         "--num_parts",
         help="Number of parts in the pile.",
         default=10000,
+        type=int,
+    )
+    parser.add_argument(
+        "--num_colors",
+        help="Number of colors in the pile.",
+        default=4,
+        type=int,
     )
     args = parser.parse_args()
 
-    parts = gen_parts(PARTS, COLORS, args.num_parts)
+    colors = gen_colors(args.num_colors)
+    parts = gen_parts(PARTS, colors, args.num_parts)
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".ldr") as ldr:
         for part in parts:
             ldr.write(str(part) + "\n")
