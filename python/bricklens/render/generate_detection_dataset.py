@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 
 import argparse
+import datetime
+import json
 import os
 import random
 import re
 import subprocess
 import tempfile
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ldraw.colour import Colour
 from ldraw.figure import *
@@ -65,26 +67,42 @@ global_settings {
 }
 """
 
+#light_source
+#{ <0, 1900, 0>, rgb <0.95, 0.83, 0.51>
+#  fade_distance 1900 fade_power 2
+#  area_light x*70, y*70, 20, 20 circular orient adaptive 0 jitter
+#}
+#
+#light_source
+#{ <4000, 2000, 250>, rgb <1.0, 1.0, 1.0>
+#  fade_distance 10000 fade_power 2
+#  area_light x*70, y*70, 20, 20 circular orient adaptive 0 jitter
+#}
+
 
 POV_TRAILER = """
 light_source
-{ <0, 1900, 0>, rgb <0.95, 0.83, 0.51>
-  fade_distance 1900 fade_power 2
-  area_light x*70, y*70, 20, 20 circular orient adaptive 0 jitter
+{ <0, 1900, 0>
+  color rgb 0.75
+  area_light 200, 200, 10, 10
+  jitter
 }
 
 light_source
-{ <4000, 2000, 250>, rgb <0.95, 0.83, 0.51>
-  fade_distance 10000 fade_power 2
-  area_light x*70, y*70, 20, 20 circular orient adaptive 0 jitter
+{ <4000, 2000, 250>
+  color rgb 0.75
+  area_light 200, 200, 10, 10
+  jitter
 }
 
 background { color Black }
 
 camera {
+  up <0,1,0>
+  right <1,0,0>
   location <-500.000000, 700.000000, -500.000000>
   look_at <500.000000, -200.000000, 500.000000>
-  angle 40
+  angle 35 
 }
 """
 
@@ -128,6 +146,7 @@ def gen_pile(
 
 
 def gen_ldr(ldraw_path, parts):
+    """Generate an LDR file from the given list of parts."""
     with open(ldraw_path, "w") as ldr_file:
         for part in parts:
             ldr_file.write(str(part) + "\n")
@@ -135,6 +154,7 @@ def gen_ldr(ldraw_path, parts):
 
 
 def gen_pov(ldraw_path, pov_path):
+    """Generate a POVRay file from the given LDR file."""
     model, parts = get_model(ldraw_path)
 
     with open(pov_path, "w") as pov_file:
@@ -146,6 +166,7 @@ def gen_pov(ldraw_path, pov_path):
 
 
 def run_pov(pov_path, image_path, image_width, image_height):
+    """Run POVRay with the given input POV file, output image, and image size."""
     cmd = [
         "povray",
         f"-i{pov_path}",
@@ -160,6 +181,7 @@ def run_pov(pov_path, image_path, image_width, image_height):
 
 
 def render(pieces: List[Piece], image_path: str, width: int, height: int):
+    """Render the given list of pieces to the given image file."""
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".ldr") as ldr:
         ldr.close()
         gen_ldr(ldr.name, pieces)
@@ -174,6 +196,7 @@ def render(pieces: List[Piece], image_path: str, width: int, height: int):
 def get_bounding_box(
     piece: Piece, image_width: int, image_height: int
 ) -> Optional[Tuple[int, int, int, int]]:
+    """Return the bounding box of the given piece in a scene."""
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".png") as tmpimg:
         tmpimg.close()
         render([piece], tmpimg.name, image_width, image_height)
@@ -183,8 +206,36 @@ def get_bounding_box(
     return bbox
 
 
+class DatasetImage:
+    def __init__(
+        self,
+        id: int,
+        image_fname: str,
+        annotations: List[Tuple[str, Tuple[int, int, int, int]]],
+    ):
+        self._id = id
+        self._image_fname = image_fname
+        self._annotations = annotations
+
+    @property
+    def id(self) -> int:
+        return self._id
+
+    @property
+    def image_fname(self) -> str:
+        return self._image_fname
+
+    @property
+    def annotations(self) -> List[Tuple[str, Tuple[int, int, int, int]]]:
+        return self._annotations
+
+    def categories(self) -> Set[str]:
+        return set([x[0] for x in self._annotations])
+
+
 def gen_dataset_image(
     index: int,
+    total_images: int,
     foreground_parts: Set[Any],
     foreground_colors: Set[Any],
     background_parts: Set[Any],
@@ -194,8 +245,10 @@ def gen_dataset_image(
     outdir: str,
     image_width: int,
     image_height: int,
-) -> Tuple[str, List[Any]]:
-    image_fname = os.path.join(outdir, "image_{:05d}.png".format(index))
+) -> DatasetImage:
+    """Generate a single image in the dataset."""
+
+    image_fname = os.path.join(outdir, "images", "image_{:05d}.png".format(index))
     annotations = []
 
     foreground_pieces = []
@@ -203,7 +256,9 @@ def gen_dataset_image(
     foreground_parts = list(foreground_parts)
     foreground_colors = list(foreground_colors)
 
-    with Bar(f"[{index}] Generating bounding boxes", max=detections_size) as bar:
+    with Bar(
+        f"[{index}/{total_images}] Generating bounding boxes", max=detections_size
+    ) as bar:
         for piece_index in range(detections_size):
             part = random.choice(foreground_parts)
             color = random.choice(foreground_colors)
@@ -215,7 +270,7 @@ def gen_dataset_image(
             tries = 0
             while bbox is None and tries < 100:
                 piece = gen_piece(
-                    part, color, x_range=(0, 1500), y_range=(-200, 0), z_range=(0, 1500)
+                    part, color, x_range=(-250, 1250), y_range=(-200, 0), z_range=(-250, 1250)
                 )
                 bbox = get_bounding_box(piece, image_width, image_height)
                 tries += 1
@@ -228,13 +283,76 @@ def gen_dataset_image(
             foreground_pieces.append(piece)
             bar.next()
 
-    print(f"[{index}] Rendering scene...")
+    print(f"[{index}/{total_images}] Rendering scene...")
     pile = gen_pile(background_parts, background_colors, pile_size)
     render(pile + foreground_pieces, image_fname, image_width, image_height)
-    return (image_fname, annotations)
+    return DatasetImage(index, image_fname, annotations)
+
+
+def gen_category_map(all_images: List[DatasetImage]) -> Dict[str, int]:
+    """Return a mapping from category name to category ID."""
+    category_names = set()
+    for image in all_images:
+        category_names.update(image.categories())
+    return {catname: index for index, catname in enumerate(category_names)}
+
+
+def gen_category_metadata(all_categories: Dict[str, int]) -> List[Dict[str, Any]]:
+    """Return MSCOCO category metadata for the given category map."""
+    return [{"id": catid, "name": catname} for catname, catid in all_categories.items()]
+
+
+def gen_image_metadata(
+    images: List[DatasetImage], image_width: int, image_height: int
+) -> List[Dict[str, Any]]:
+    """Return MSCOCO image metadata for the given images."""
+    return [
+        {
+            "id": img.id,
+            "file_name": os.path.basename(img.image_fname),
+            "width": image_width,
+            "height": image_height,
+        }
+        for index, img in enumerate(images)
+    ]
+
+
+def gen_annotations(
+    all_categories: Dict[str, int], images: List[DatasetImage]
+) -> List[Dict[str, Any]]:
+    """Generate MSCOCO annotations for the given set of images, using the given category ID map."""
+    retval: List[Dict[str, Any]] = []
+    index = 0
+    for image in images:
+        for annotation in image.annotations:
+            retval.append(
+                {
+                    "id": index,
+                    "image_id": image.id,
+                    "category_id": all_categories[annotation[0]],
+                    "bbox": annotation[1],
+                }
+            )
+            index += 1
+    return retval
 
 
 def gen_dataset(args):
+    """Generate the dataset."""
+
+    if os.path.exists(args.outdir):
+        if args.overwrite:
+            print("Warning: Output path exists, overwriting existing dataset!")
+        else:
+            raise RuntimeError(
+                f"Output path {args.outdir} exists, use --overwrite to overwrite."
+            )
+
+    os.makedirs(args.outdir, exist_ok=True)
+    os.makedirs(os.path.join(args.outdir, "images"), exist_ok=True)
+    os.makedirs(os.path.join(args.outdir, "debug_images"), exist_ok=True)
+    os.makedirs(os.path.join(args.outdir, "annotations"), exist_ok=True)
+
     all_parts = get_all_parts()
     foreground_parts = set(all_parts[0 : args.num_parts])
     background_parts = set(all_parts[0 : args.background_parts])
@@ -244,9 +362,12 @@ def gen_dataset(args):
     background_colors = set(gen_colors(args.background_colors))
     background_colors -= foreground_colors
 
+    all_images: List[DatasetImage] = []
+
     for index in range(args.num_images):
-        image_fname, annotations = gen_dataset_image(
+        dsimage = gen_dataset_image(
             index,
+            args.num_images,
             foreground_parts,
             foreground_colors,
             background_parts,
@@ -257,17 +378,58 @@ def gen_dataset(args):
             args.width,
             args.height,
         )
+        all_images.append(dsimage)
 
-        img = Image.open(image_fname)
+        img = Image.open(dsimage.image_fname)
         draw = ImageDraw.Draw(img)
-        for piece_name, bbox in annotations:
+        for category, bbox in dsimage.annotations:
             draw.rectangle(bbox, outline=(0, 255, 0), fill=None, width=1)
-            draw.text((bbox[0], bbox[1]), piece_name, (0, 255, 0))
-        outfile = os.path.join(args.outdir, "image_bboxes_{:05d}.png".format(index))
+            draw.text((bbox[0], bbox[1]), category, (0, 255, 0))
+        outfile = os.path.join(
+            args.outdir, "debug_images", "image_bboxes_{:05d}.png".format(index)
+        )
         img.save(outfile)
         print(f"Saved {outfile}")
 
-    # TODO: Write out annotations.
+    all_categories = gen_category_map(all_images)
+    assert 0.0 < args.frac_train_images <= 1.0
+    split = int(len(all_images) * args.frac_train_images)
+    train_images = all_images[0:split]
+    val_images = all_images[split:]
+
+    print(f"Writing {len(train_images)}/{len(all_images)} train image annotations...")
+    train_dataset = {
+        "info": {
+            "description": "Generated by generate_detection_dataset.py",
+            "version": "0.1",
+            "date_created": datetime.datetime.utcnow().isoformat(),
+        },
+        "categories": gen_category_metadata(all_categories),
+        "images": gen_image_metadata(train_images, args.width, args.height),
+        "annotations": gen_annotations(all_categories, train_images),
+    }
+    with open(
+        os.path.join(args.outdir, "annotations", "annotations_train.json"), "w"
+    ) as outfile:
+        json.dump(train_dataset, outfile, indent=4)
+
+    print(f"Writing {len(val_images)}/{len(all_images)} val image annotations...")
+    val_dataset = {
+        "info": {
+            "description": "Generated by generate_detection_dataset.py",
+            "version": "0.1",
+            "date_created": datetime.datetime.utcnow().isoformat(),
+        },
+        "categories": gen_category_metadata(all_categories),
+        "images": gen_image_metadata(val_images, args.width, args.height),
+        "annotations": gen_annotations(all_categories, val_images),
+    }
+    with open(
+        os.path.join(args.outdir, "annotations", "annotations_val.json"), "w"
+    ) as outfile:
+        json.dump(val_dataset, outfile, indent=4)
+
+    print("Done.")
 
 
 def main():
@@ -279,24 +441,24 @@ def main():
         "--num_images",
         help="Number of output images in the dataset.",
         type=int,
-        default=1,
+        default=10,
     )
     parser.add_argument(
         "--width",
         help="Width in pixels of each output image.",
-        default=800,
+        default=448,
         type=int,
     )
     parser.add_argument(
         "--height",
         help="Height in pixels of each output image.",
-        default=600,
+        default=448,
         type=int,
     )
     parser.add_argument(
         "--num_parts",
         help="Number of different parts in detection dataset.",
-        default=4,
+        default=10,
         type=int,
     )
     parser.add_argument(
@@ -308,7 +470,7 @@ def main():
     parser.add_argument(
         "--background_parts",
         help="Number of different parts in background pile.",
-        default=10,
+        default=15,
         type=int,
     )
     parser.add_argument(
@@ -320,7 +482,7 @@ def main():
     parser.add_argument(
         "--detections_size",
         help="Total number of parts to be detected in each image.",
-        default=5,
+        default=25,
         type=int,
     )
     parser.add_argument(
@@ -329,6 +491,19 @@ def main():
         default=2000,
         type=int,
     )
+    parser.add_argument(
+        "--frac_train_images",
+        default=0.8,
+        help="Fraction of images in train vs. validation set",
+        type=float,
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        default=False,
+        help="Overwrite existing --outdir if it exists.",
+    )
+
     args = parser.parse_args()
 
     gen_dataset(args)
