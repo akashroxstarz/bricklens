@@ -28,7 +28,7 @@ from ignite.contrib.handlers import ProgressBar
 
 import wandb
 
-from bricklens.train.darknet19 import darknet as darknet
+from bricklens.train.classification.darknet19 import darknet as darknet
 
 
 WORKLOAD = "brickfinder"
