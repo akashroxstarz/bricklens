@@ -11,11 +11,6 @@ from torch.optim.lr_scheduler import StepLR
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, sampler, random_split
 
-import matplotlib
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-
 from torchvision import models
 from torch.utils.tensorboard import SummaryWriter
 
@@ -32,7 +27,8 @@ from ignite.metrics import Accuracy, Loss, RunningAverage, ConfusionMatrix
 from ignite.contrib.handlers import ProgressBar
 
 import wandb
-from darknet19 import darknet as darknet
+
+from bricklens.train.darknet19 import darknet as darknet
 
 
 WORKLOAD = "brickfinder"
@@ -106,14 +102,12 @@ def apply_test_transforms(inp):
     return out
 
 
-def predict(model, filepath, show_img=False, url=False):
+def predict(model, filepath, url=False):
     if url:
         response = requests.get(filepath)
         im = Image.open(BytesIO(response.content))
     else:
         im = Image.open(filepath)
-    if show_img:
-        plt.imshow(im)
     im_as_tensor = apply_test_transforms(im)
     minibatch = torch.stack([im_as_tensor])
     if torch.cuda.is_available():
@@ -130,7 +124,6 @@ def predict(model, filepath, show_img=False, url=False):
 predict(
     model,
     DATASET_DIR + "3005-Dark_Pink/image00142.png",
-    show_img=False,
 )
 
 criterion = nn.CrossEntropyLoss()
