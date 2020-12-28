@@ -1,0 +1,9 @@
+classes: 3
+train: train.txt
+val: val.txt
+
+class_names:
+  - Class1
+  - Class2
+  - Class3
+
