@@ -1,0 +1,13 @@
+Current status:
+
+- Model loading and instantiation should work
+
+To do:
+
+- Migrate over to Ignite and WandB for training loop, checkpoints, etc.
+- Generate dataset in the simple format.
+- Look at how training code encodes information on classes. Current code seems to cap number
+  of classes to 3.
+- Look at assumption of 416 x 416 images.
+- Consider starting from existing Yolo2 pretrained weights rather than training from scratch?
+- Look at anchor boxes - they are almost certainly not right.
