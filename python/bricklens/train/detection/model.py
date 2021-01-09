@@ -4,7 +4,7 @@
 from __future__ import division
 
 from collections import defaultdict
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -12,8 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 from torch.autograd import Variable
-from utils.parse_config import *
-from utils.utils import build_targets
+from utils import build_targets
 
 
 def create_modules(module_defs: Dict[str, Any]) -> Tuple[Dict[str, Any], nn.ModuleList]:
@@ -79,8 +78,7 @@ def create_modules(module_defs: Dict[str, Any]) -> Tuple[Dict[str, Any], nn.Modu
         elif module_def["type"] == "yolo":
             anchor_idxs = [int(x) for x in module_def["mask"]]
             # Extract anchors
-            anchors = [int(x) for x in module_def["anchors"]]
-            anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
+            anchors = module_def["anchors"]
             anchors = [anchors[i] for i in anchor_idxs]
             num_classes = int(module_def["classes"])
             img_height = int(hyperparams["height"])

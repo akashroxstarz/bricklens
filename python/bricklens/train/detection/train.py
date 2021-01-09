@@ -1,5 +1,8 @@
+#!/usr/bin/env python3
+
 # Adapted from:
 # https://github.com/cfotache/pytorch_custom_yolo_training
+
 
 from __future__ import division
 
@@ -11,16 +14,17 @@ import time
 
 import torch
 import torch.optim as optim
+import wandb
+import yaml
 from torch.autograd import Variable
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from utils.datasets import *
-from utils.parse_config import *
-from utils.utils import *
 
 import dataset
-import model
+from model import Darknet
 
+# Get command-line arguments.
 parser = argparse.ArgumentParser()
 parser.add_argument("--epochs", type=int, default=20, help="number of training epochs")
 parser.add_argument(
@@ -29,13 +33,13 @@ parser.add_argument(
 parser.add_argument(
     "--model_config_path",
     type=str,
-    default="config/yolov3.yml",
+    default="bricklens/train/detection/config/yolov3.yml",
     help="Path to model config file",
 )
 parser.add_argument(
     "--dataset_config_path",
     type=str,
-    default="config/dataset.yml",
+    default="bricklens/train/detection/config/dataset.yml",
     help="Path to dataset config file",
 )
 parser.add_argument(
@@ -80,10 +84,13 @@ parser.add_argument(
 args = parser.parse_args()
 print(args)
 
+# Check for CUDA.
 cuda = torch.cuda.is_available() and args.use_cuda
 print(f"Using CUDA: {cuda}")
+device = "cuda:0" if cuda else "cpu"
 
-os.makedirs("checkpoints", exist_ok=True)
+# Create checkpoint directory.
+os.makedirs(args.checkpoint_dir, exist_ok=True)
 
 # Get dataset configuration.
 with open(args.dataset_config_path, "r") as stream:
@@ -94,35 +101,47 @@ train_path = data_config["train"]
 with open(args.model_config_path, "r") as stream:
     model_config = yaml.safe_load(stream)
 
-learning_rate = float(model_config["learning_rate"])
-momentum = float(model_config["momentum"])
-decay = float(model_config["decay"])
-burn_in = int(model_config["burn_in"])
-
-# Initiate model
+# Create model.
+print(f"MDW: model_config is: {model_config}")
 model = Darknet(model_config)
-if args.weights_path is not None:
+if args.weights_path is not None and os.path.exists(args.weights_path):
     model.load_weights(args.weights_path)
     # model.apply(weights_init_normal)
-
 if cuda:
     model = model.cuda()
-
 model.train()
+Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
-# Get dataloader
+# Create dataloader.
 dataloader = torch.utils.data.DataLoader(
-    ListDataset(train_path),
+    dataset.ListDataset(train_path),
     batch_size=args.batch_size,
     shuffle=False,
     num_workers=args.n_cpu,
 )
 
-Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+# Create optimizer.
+initial_lr = float(model_config["hyperparams"]["initial_lr"])
+gamma = float(model_config["hyperparams"]["gamma"])
+# momentum = float(model_config["momentum"])
+# decay = float(model_config["decay"])
+# burn_in = int(model_config["burn_in"])
+optimizer = torch.optim.Adam(
+    filter(lambda p: p.requires_grad, model.parameters()), lr=initial_lr
+)
+scheduler = StepLR(optimizer, step_size=((args.epochs * 0.9) // 3), gamma=gamma)
 
-optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()))
+# Initialize WandB.
+WORKLOAD = "bricklens"
+wandb.init(project=WORKLOAD)
+config = wandb.config
+config.max_epochs = args.epochs
+config.initial_lr = initial_lr
+config.gamma = gamma
+wandb.watch(model)
 
-for epoch in range(opt.epochs):
+# Do the training loop.
+for epoch in range(args.epochs):
     for batch_i, (_, imgs, targets) in enumerate(dataloader):
         imgs = Variable(imgs.type(Tensor))
         targets = Variable(targets.type(Tensor), requires_grad=False)
@@ -155,7 +174,19 @@ for epoch in range(opt.epochs):
 
         model.seen += imgs.size(0)
 
+        # Log to WandB.
+        for index, param_group in enumerate(optimizer.param_groups):
+            ldict[f"lr_{index}"] = param_group["lr"]
+        wandb.log(ldict)
+        wandb.log({"loss_x": model.losses["x"]})
+        wandb.log({"loss_y": model.losses["y"]})
+        wandb.log({"loss_w": model.losses["w"]})
+        wandb.log({"loss_h": model.losses["h"]})
+        wandb.log({"loss_conf": model.losses["conf"]})
+        wandb.log({"loss_cls": model.losses["cls"]})
+        wandb.log({"loss": loss.item()})
+        wandb.log({"precision": model.losses["precision"]})
+        wandb.log({"recall": model.losses["recall"]})
+
     if epoch % args.checkpoint_interval == 0:
-        model.save_weights("%s/%d.weights" % (args.checkpoint_dir, epoch))
-
-
+        model.save_weights(os.path.join(args.checkpoint_dir, "f{epoch}.weights"))

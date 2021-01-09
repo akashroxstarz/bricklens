@@ -1,6 +1,6 @@
 classes: 3
-train: train.txt
-val: val.txt
+train: detection_1000/train.txt
+val: detection_1000/val.txt
 
 class_names:
   - Class1
