@@ -1,13 +1,145 @@
 Current status:
 
 - Model loading and instantiation should work
+- Got training code up and running.
+- Generated dataset in the simple format.
 
 To do:
 
-- Migrate over to Ignite and WandB for training loop, checkpoints, etc.
-- Generate dataset in the simple format.
-- Look at how training code encodes information on classes. Current code seems to cap number
-  of classes to 3.
+- Map classes to integer values.
+- Make sure number of output classes matches number of classes in dataset.
 - Look at assumption of 416 x 416 images.
-- Consider starting from existing Yolo2 pretrained weights rather than training from scratch?
+- Consider starting from existing Yolo3 pretrained weights rather than training from scratch?
 - Look at anchor boxes - they are almost certainly not right.
+
+
+Notes on YOLO3 model code:
+
+The config file "yolov3.cfg" is from PJReddie's code here:
+
+https://github.com/pjreddie/darknet/blob/master/cfg/yolov3-voc.cfg
+
+The "VOC" variant takes 416x416 input images. It differs in terms of
+the image size used, number of classes (80 vs 20), and the "ignore_thresh"
+parameter (0.7 vs 0.5). So I think this is not that meaningful.
+
+Looks like the code I'm using (from pytorch_custom_yolo_training repo)
+has modified it to only support 3 models.
+
+The version I'm using has these changes:
+  - Batch size of 16 (vs 64 in the original yolov3-voc.cfg).
+  - LR of 0.002 (vs 0.001).
+  - Output classes = 3 (vs 20).
+
+Network looks like this:
+
+  conv2d 3x3, 32 channels, stride 1 + bn + leaky
+
+  conv2d 3x3, 64 channels, stride 2 + bn + leaky
+  conv2d 1x1, 32 channels, stride 1 + bn + leaky
+  conv2d 3x3, 64 channels, stride 1 + bn + leaky
+  shortcut from -3
+
+  conv2d 3x3, 128 channels, stride 2 + bn + leaky
+  conv2d 1x1, 64 channels, stride 1 + bn + leaky
+  conv2d 3x3, 128 channels, stride 1 + bn + leaky
+  shortcut from -3
+
+  conv2d 1x1, 64 channels, stride 1 + bn + leaky
+  conv2d 3x3, 128 channels, stride 1 + bn + leaky
+  shortcut from -3
+
+  conv2d 3x3, 256 channels, stride 2 + bn + leaky
+  conv2d 1x1, 128 channels, stride 1 + bn + leaky
+  conv2d 3x3, 256 channels, stride 1 + bn + leaky
+  shortcut from -3
+
+  conv2d 1x1, 128 channels, stride 1 + bn + leaky |
+  conv2d 3x3, 256 channels, stride 1 + bn + leaky |  x 7
+  shortcut from -3                                |
+
+  conv2d 3x3, 512 channels, stride 2 + bn + leaky
+  conv2d 1x1, 256 channels, stride 1 + bn + leaky
+  conv2d 3x3, 512 channels, stride 1 + bn + leaky
+  shortcut from -3
+  
+  conv2d 1x1, 256 channels, stride 1 + bn + leaky |
+  conv2d 3x3, 512 channels, stride 1 + bn + leaky |  x 7
+  shortcut from -3                                |
+
+  conv2d 3x3, 1024 channels, stride 2 + bn + leaky
+  conv2d 1x1, 512 channels, stride 1 + bn + leaky
+  conv2d 3x3, 1024 channels, stride 1 + bn + leaky
+  shortcut from -3
+  
+  conv2d 1x1, 512 channels, stride 1 + bn + leaky  |
+  conv2d 3x3, 1024 channels, stride 1 + bn + leaky |  x 3
+  shortcut from -3                                 |
+
+  #### YOLO output #1:
+
+  conv2d 1x1, 512 channels, stride 1 + bn + leaky  |
+  conv2d 3x3, 1024 channels, stride 1 + bn + leaky |  x 3
+
+  conv2d 1x1, 24 channels, no BN, linear
+
+  yolo (mask = 6, 7, 8) classes=3 num=9  - The "mask" seems to have to do with which anchors are used.
+    There are 9 anchor boxes in total, this is selecting the last 3 of them.
+
+  route from -4
+
+  conv2d 1x1, 256 channels, stride 1 + bn + leaky
+
+  upsample stride=2
+
+  route from layers -1 and 61 (???)
+
+  #### YOLO output #2:
+
+  conv2d 1x1, 256 channels, stride 1 + bn + leaky |
+  conv2d 3x3, 512 channels, stride 1 + bn + leaky |  x 3
+
+  conv2d 1x1, 24 channels, no BN, linear
+
+  yolo (mask = 3, 4, 5) classes=3 num=9
+
+  route from -4
+
+  conv2d 1x1, 128 channels, stride 1 + bn + leaky
+
+  upsample stride=2
+
+  route from layers -1 and 36  (???)
+
+  #### YOLO output #3:
+
+  conv2d 1x1, 128 channels, stride 1 + bn + leaky |
+  conv2d 3x3, 256 channels, stride 1 + bn + leaky |  x 3
+
+  conv2d 1x1, 24 channels, no BN, linear
+
+  yolo (mask = 0, 1, 2) classes=3 num=9
+
+
+Here is the YOLOv3 paper: https://arxiv.org/pdf/1804.02767.pdf
+Main ideas:
+  * For each cell there are 9 "dimension clusters" - this is from YOLOv2.
+  * Performs multiclass classification - no softmax.
+  * Boxes predicted at 3 different scales (this is the reason for the 3 YOLO layers).
+    * Predict 3 boxes at each scale. This is why there are three entries in the "masks" field.
+  * Bounding box priors based on k-means clustering from the COCO dataset.
+  * The classifier network itself (without the YOLO layers) is what is called "DarkNet-53".
+
+Implementation notes:
+  - Shortcut layer adds the previous layer to the output of the referenced layer.
+  - Route layer seems to just emit the output of the referenced layers.
+  - There is a LOT of complexity in the YOLO layer code. Need to dig in and understand
+    this better.
+
+
+
+
+
+
+
+

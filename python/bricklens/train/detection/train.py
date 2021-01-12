@@ -102,8 +102,8 @@ with open(args.model_config_path, "r") as stream:
     model_config = yaml.safe_load(stream)
 
 # Create model.
-print(f"MDW: model_config is: {model_config}")
 model = Darknet(model_config)
+print(f"MDW: model is:\n{model}")
 if args.weights_path is not None and os.path.exists(args.weights_path):
     model.load_weights(args.weights_path)
     # model.apply(weights_init_normal)
