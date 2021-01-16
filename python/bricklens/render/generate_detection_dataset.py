@@ -2,6 +2,7 @@
 
 import argparse
 import datetime
+import itertools
 import json
 import os
 import random
@@ -234,6 +235,13 @@ class DatasetImage:
         return set([x[0] for x in self._annotations])
 
 
+def gen_classes(parts: Set[Any], colors: Set[Any]) -> List[str]:
+    """Generate list of classes in the dataset."""
+    parts = list(parts)
+    colors = list(colors)
+    return [f"{part}_{color.name}" for part, color in itertools.product(parts, colors)]
+
+
 def gen_dataset_image(
     index: int,
     total_images: int,
@@ -346,8 +354,8 @@ def write_dataset(images: List[DatasetImage], outdir: str, outfile: str):
     with open(os.path.join(outdir, outfile), "w") as outfile:
         for img in images:
             img_fname = os.path.basename(img.image_fname)  # image_00000.png
-            fname_base, _ = os.path.splitext(img_fname)    # image_00000
-            label_fname = f"{fname_base}.txt")             # image_00000.txt
+            fname_base, _ = os.path.splitext(img_fname)  # image_00000
+            label_fname = f"{fname_base}.txt"  # image_00000.txt
             outfile.write(f"images/{img_fname} labels/{label_fname}\n")
             with open(os.path.join(outdir, "labels", label_fname), "w") as labelfile:
                 for category, bbox in img.annotations:
@@ -381,6 +389,16 @@ def gen_dataset(args):
     foreground_colors = set(gen_colors(args.num_colors))
     background_colors = set(gen_colors(args.background_colors))
     background_colors -= foreground_colors
+
+    # Generate class mapping file.
+    classes = gen_classes(foreground_parts, foreground_colors)
+    with open(os.path.join(args.outdir, "classes.txt"), "w") as classfile:
+        for index, classname in enumerate(classes):
+            classfile.write(f"{index} {classname}\n")
+
+    if args.skip_rendering:
+        print("Skipping image rendering.")
+        return
 
     # Generate images and labels.
     all_images: List[DatasetImage] = []
@@ -429,6 +447,13 @@ def main():
     parser.add_argument(
         "--outdir", help="Output directory for generated dataset.", required=True
     )
+    parser.add_argument(
+        "--skip_rendering",
+        action="store_true",
+        default=False,
+        help="Skip rendering images and generating labels. If set, only write class file.",
+    )
+
     parser.add_argument(
         "--num_images",
         help="Number of output images in the dataset.",

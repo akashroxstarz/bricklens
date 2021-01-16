@@ -605,7 +605,7 @@ modules:
       - [116, 90]
       - [156, 198]
       - [373, 326]
-    classes: 3
+    classes: 40
     num: 9
     jitter: .3
     ignore_thresh: .7
@@ -696,7 +696,7 @@ modules:
       - [116, 90]
       - [156, 198]
       - [373, 326]
-    classes: 3
+    classes: 40
     num: 9
     jitter: .3
     ignore_thresh: .7
@@ -787,7 +787,7 @@ modules:
       - [116, 90]
       - [156, 198]
       - [373, 326]
-    classes: 3
+    classes: 40
     num: 9
     jitter: .3
     ignore_thresh: .7

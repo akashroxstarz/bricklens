@@ -17,11 +17,22 @@ class ListDataset(Dataset):
     consisting of a list of full image pathnames, one per row.
     """
 
-    def __init__(self, list_path: str, image_shape: Tuple[int, int] = (416, 416)):
+    def __init__(
+        self,
+        list_path: str,
+        classfile_path: str,
+        image_shape: Tuple[int, int] = (416, 416),
+    ):
         basedir = os.path.dirname(list_path)
 
         with open(list_path, "r") as infile:
             list_rows = infile.readlines()
+
+        self._classes: Dict[str, float] = {}
+        with open(classfile_path, "r") as infile:
+            for row in infile:
+                classnum, classname = row.split()
+                self._classes[classname] = float(classnum)
 
         self._image_filenames: List[str] = []
         self._label_filenames: List[str] = []
@@ -37,6 +48,10 @@ class ListDataset(Dataset):
             self._label_filenames.append(label_filename)
         self._image_shape = image_shape
         self.max_objects = 1
+
+    def _convert_class(self, class_name: str) -> float:
+        """Convert class name to a float value."""
+        return self._classes[class_name]
 
     def __getitem__(self, index: int) -> Tuple[str, torch.Tensor, List[torch.Tensor]]:
         """PyTorch Dataset getitem method."""
@@ -73,14 +88,16 @@ class ListDataset(Dataset):
         #  Labels
         # ---------
 
+        # Format of rows in the labels file is expected to be:
+        # class x y width height
+
         label_path = self._label_filenames[index % len(self._image_filenames)]
-        labels = np.loadtxt(label_path).reshape(-1, 5)
+        labels = np.loadtxt(
+            label_path, converters={0: lambda s: self._convert_class(s.decode("utf-8"))}
+        ).reshape(-1, 5)
         if len(labels) == 0:
             # Empty file, no labels.
             return img_path, input_img, torch.from_numpy(labels)
-
-        # Format of rows in the labels file is expected to be:
-        # class x y width height
 
         # Extract coordinates for unpadded + unscaled image
         x1 = w * (labels[:, 1] - labels[:, 3] / 2)

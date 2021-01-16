@@ -28,7 +28,7 @@ from model import Darknet
 parser = argparse.ArgumentParser()
 parser.add_argument("--epochs", type=int, default=20, help="number of training epochs")
 parser.add_argument(
-    "--batch_size", type=int, default=16, help="size of each image batch"
+    "--batch_size", type=int, default=2, help="size of each image batch"
 )
 parser.add_argument(
     "--model_config_path",
@@ -89,6 +89,9 @@ cuda = torch.cuda.is_available() and args.use_cuda
 print(f"Using CUDA: {cuda}")
 device = "cuda:0" if cuda else "cpu"
 
+if cuda:
+    print("Initial CUDA memory usage:\n" + torch.cuda.memory_summary())
+
 # Create checkpoint directory.
 os.makedirs(args.checkpoint_dir, exist_ok=True)
 
@@ -96,6 +99,8 @@ os.makedirs(args.checkpoint_dir, exist_ok=True)
 with open(args.dataset_config_path, "r") as stream:
     data_config = yaml.safe_load(stream)
 train_path = data_config["train"]
+classfile_path = data_config["classes"]
+
 
 # Get model parameters.
 with open(args.model_config_path, "r") as stream:
@@ -109,16 +114,22 @@ if args.weights_path is not None and os.path.exists(args.weights_path):
     # model.apply(weights_init_normal)
 if cuda:
     model = model.cuda()
+
+if cuda:
+    print("Model CUDA memory usage:\n" + torch.cuda.memory_summary())
+
 model.train()
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
+
 # Create dataloader.
 dataloader = torch.utils.data.DataLoader(
-    dataset.ListDataset(train_path),
+    dataset.ListDataset(train_path, classfile_path),
     batch_size=args.batch_size,
     shuffle=False,
     num_workers=args.n_cpu,
 )
+
 
 # Create optimizer.
 initial_lr = float(model_config["hyperparams"]["initial_lr"])
@@ -148,7 +159,13 @@ for epoch in range(args.epochs):
 
         optimizer.zero_grad()
 
+        if cuda:
+           print("Pre model CUDA memory usage:\n" + torch.cuda.memory_summary())
+
         loss = model(imgs, targets)
+
+        if cuda:
+           print("Post model CUDA memory usage:\n" + torch.cuda.memory_summary())
 
         loss.backward()
         optimizer.step()

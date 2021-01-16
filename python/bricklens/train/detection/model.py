@@ -15,15 +15,20 @@ from torch.autograd import Variable
 from utils import build_targets
 
 
-def create_modules(module_defs: Dict[str, Any]) -> Tuple[Dict[str, Any], nn.ModuleList]:
+def create_modules(module_config: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]], nn.ModuleList]:
     """
-    Constructs module list of layer blocks from module configuration in module_defs
+    Constructs module list of layer blocks from module configuration in module_config.
+    Returns:
+      (1) Dict of yperparameters.
+      (2) List of dicts of module definitions.
+      (3) nn.ModuleList.
     """
-    hyperparams = module_defs["hyperparams"]
+    hyperparams = module_config["hyperparams"]
     output_filters = [int(hyperparams["channels"])]
     module_list = nn.ModuleList()
+    module_defs = module_config["modules"]
 
-    for i, module_def in enumerate(module_defs["modules"]):
+    for i, module_def in enumerate(module_defs):
         modules = nn.Sequential()
 
         if module_def["type"] == "convolutional":
@@ -85,11 +90,14 @@ def create_modules(module_defs: Dict[str, Any]) -> Tuple[Dict[str, Any], nn.Modu
             # Define detection layer
             yolo_layer = YOLOLayer(anchors, num_classes, img_height)
             modules.add_module("yolo_%d" % i, yolo_layer)
+        else:
+            raise ValueError(f"Unrecognized module type: {module_def}")
+
         # Register module list and number of output filters
         module_list.append(modules)
         output_filters.append(filters)
 
-    return hyperparams, module_list
+    return hyperparams, module_defs, module_list
 
 
 class EmptyLayer(nn.Module):
@@ -243,8 +251,7 @@ class Darknet(nn.Module):
 
     def __init__(self, module_config: Dict[str, Any], img_size: int = 416):
         super(Darknet, self).__init__()
-        self._module_defs = module_config
-        self._hyperparams, self._module_list = create_modules(self._module_defs)
+        self._hyperparams, self._module_defs, self._module_list = create_modules(module_config)
         self._img_size = img_size
         self.seen = 0
         self._header_info = np.array([0, 0, 0, self.seen, 0])
@@ -258,6 +265,9 @@ class Darknet(nn.Module):
         for i, (module_def, module) in enumerate(
             zip(self._module_defs, self._module_list)
         ):
+            print(f"Layer [{i}]: {module_def}")
+            print(f"[{i}] Pre-layer CUDA memory usage:\n" + torch.cuda.memory_summary())
+
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
             elif module_def["type"] == "route":
@@ -280,6 +290,8 @@ class Darknet(nn.Module):
 
         self.losses["recall"] /= 3
         self.losses["precision"] /= 3
+
+        print(f"[{i}] Post-layer CUDA memory usage:\n" + torch.cuda.memory_summary())
         return sum(output) if is_training else torch.cat(output, 1)
 
     def load_weights(self, weights_path):
