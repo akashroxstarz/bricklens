@@ -304,7 +304,7 @@ class Darknet(nn.Module):
         )  # First five are header values
 
         # Needed to write header when saving weights
-        self.header_info = header
+        self._header_info = header
 
         self.seen = header[3]
         weights = np.fromfile(fp, dtype=np.float32)  # The rest are weights
@@ -312,7 +312,7 @@ class Darknet(nn.Module):
 
         ptr = 0
         for i, (module_def, module) in enumerate(
-            zip(self.module_defs, self.module_list)
+            zip(self._module_defs, self._module_list)
         ):
             if module_def["type"] == "convolutional":
                 conv_layer = module[0]
@@ -368,12 +368,12 @@ class Darknet(nn.Module):
     def save_weights(self, path, cutoff=-1):
 
         fp = open(path, "wb")
-        self.header_info[3] = self.seen
-        self.header_info.tofile(fp)
+        self._header_info[3] = self.seen
+        self._header_info.tofile(fp)
 
         # Iterate through layers
         for i, (module_def, module) in enumerate(
-            zip(self.module_defs[:cutoff], self.module_list[:cutoff])
+            zip(self._module_defs[:cutoff], self._module_list[:cutoff])
         ):
             if module_def["type"] == "convolutional":
                 conv_layer = module[0]

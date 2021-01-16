@@ -197,4 +197,4 @@ for epoch in range(args.epochs):
         wandb.log({"recall": model.losses["recall"]})
 
     if epoch % args.checkpoint_interval == 0:
-        model.save_weights(os.path.join(args.checkpoint_dir, "f{epoch}.weights"))
+        model.save_weights(os.path.join(args.checkpoint_dir, f"checkpoint_{epoch}.weights"))
