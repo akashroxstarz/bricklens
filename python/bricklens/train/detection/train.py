@@ -27,7 +27,7 @@ from model import Darknet
 
 # Get command-line arguments.
 parser = argparse.ArgumentParser()
-parser.add_argument("--epochs", type=int, default=20, help="number of training epochs")
+parser.add_argument("--epochs", type=int, default=100, help="number of training epochs")
 parser.add_argument(
     "--batch_size", type=int, default=1, help="size of each image batch"
 )
@@ -198,3 +198,4 @@ for epoch in range(args.epochs):
 
     if epoch % args.checkpoint_interval == 0:
         model.save_weights(os.path.join(args.checkpoint_dir, f"checkpoint_{epoch}.weights"))
+    scheduler.step()
