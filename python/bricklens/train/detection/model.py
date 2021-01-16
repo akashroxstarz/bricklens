@@ -133,7 +133,7 @@ class YOLOLayer(nn.Module):
         # Tensors for cuda support
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
         LongTensor = torch.cuda.LongTensor if x.is_cuda else torch.LongTensor
-        ByteTensor = torch.cuda.ByteTensor if x.is_cuda else torch.ByteTensor
+        BoolTensor = torch.cuda.BoolTensor if x.is_cuda else torch.BoolTensor
 
         prediction = (
             x.view(nB, nA, self.bbox_attrs, nG, nG).permute(0, 1, 3, 4, 2).contiguous()
@@ -193,8 +193,8 @@ class YOLOLayer(nn.Module):
                 precision = float(nCorrect / nProposals)
 
             # Handle masks
-            mask = Variable(mask.type(ByteTensor))
-            conf_mask = Variable(conf_mask.type(ByteTensor))
+            mask = Variable(mask.type(BoolTensor))
+            conf_mask = Variable(conf_mask.type(BoolTensor))
 
             # Handle target variables
             tx = Variable(tx.type(FloatTensor), requires_grad=False)
@@ -206,7 +206,7 @@ class YOLOLayer(nn.Module):
 
             # Get conf mask where gt and where there is no gt
             conf_mask_true = mask
-            conf_mask_false = conf_mask - mask
+            conf_mask_false = conf_mask ^ mask
 
             # Mask outputs to ignore non-existing objects
             loss_x = self.mse_loss(x[mask], tx[mask])
@@ -265,8 +265,9 @@ class Darknet(nn.Module):
         for i, (module_def, module) in enumerate(
             zip(self._module_defs, self._module_list)
         ):
-            print(f"Layer [{i}]: {module_def}")
-            print(f"[{i}] Pre-layer CUDA memory usage:\n" + torch.cuda.memory_summary())
+            # print(f"Layer [{i}]: {module_def}")
+            # print(f"[{i}] Pre-layer CUDA memory usage:\n" + torch.cuda.memory_summary())
+            # print(f"Layer [{i}] input size: {x.size()}")
 
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
@@ -286,12 +287,11 @@ class Darknet(nn.Module):
                 else:
                     x = module(x)
                 output.append(x)
+            # print(f"Layer [{i}] output size: {x.size()}")
             layer_outputs.append(x)
 
         self.losses["recall"] /= 3
         self.losses["precision"] /= 3
-
-        print(f"[{i}] Post-layer CUDA memory usage:\n" + torch.cuda.memory_summary())
         return sum(output) if is_training else torch.cat(output, 1)
 
     def load_weights(self, weights_path):

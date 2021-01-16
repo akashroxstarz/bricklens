@@ -22,6 +22,7 @@ class ListDataset(Dataset):
         list_path: str,
         classfile_path: str,
         image_shape: Tuple[int, int] = (416, 416),
+        max_objects_per_image: int = 20,
     ):
         basedir = os.path.dirname(list_path)
 
@@ -47,7 +48,7 @@ class ListDataset(Dataset):
             self._image_filenames.append(image_filename)
             self._label_filenames.append(label_filename)
         self._image_shape = image_shape
-        self.max_objects = 1
+        self._max_objects_per_image = max_objects_per_image
 
     def _convert_class(self, class_name: str) -> float:
         """Convert class name to a float value."""
@@ -95,38 +96,36 @@ class ListDataset(Dataset):
         labels = np.loadtxt(
             label_path, converters={0: lambda s: self._convert_class(s.decode("utf-8"))}
         ).reshape(-1, 5)
+
         if len(labels) == 0:
             # Empty file, no labels.
             return img_path, input_img, torch.from_numpy(labels)
 
-        # Extract coordinates for unpadded + unscaled image
-        x1 = w * (labels[:, 1] - labels[:, 3] / 2)
-        y1 = h * (labels[:, 2] - labels[:, 4] / 2)
-        x2 = w * (labels[:, 1] + labels[:, 3] / 2)
-        y2 = h * (labels[:, 2] + labels[:, 4] / 2)
+        # Extract top-left and bottom-right coords for unpadded + unscaled image
+        x1 = labels[:, 1]
+        y1 = labels[:, 2]
+        x2 = labels[:, 1] + labels[:, 3]
+        y2 = labels[:, 2] + labels[:, 4]
+
         # Adjust for added padding
         x1 += pad[1][0]
         y1 += pad[0][0]
         x2 += pad[1][0]
         y2 += pad[0][0]
-        # Calculate ratios from coordinates
+
+        # Calculate center point and scaled width/height from (0.0, 1.0)
         labels[:, 1] = ((x1 + x2) / 2) / padded_w
         labels[:, 2] = ((y1 + y2) / 2) / padded_h
-        labels[:, 3] *= w / padded_w
-        labels[:, 4] *= h / padded_h
-
-        # XXX MDW - Unsure of need for no more than "max_objects" labels per image.
-        # May depend on how the loss function interprets the returned tensor.
+        labels[:, 3] /= padded_w
+        labels[:, 4] /= padded_h
 
         # Fill matrix
-        # filled_labels = np.zeros((self.max_objects, 5))
-        # if labels is not None:
-        #    filled_labels[range(len(labels))[: self.max_objects]] = labels[
-        #        : self.max_objects
-        #    ]
-        # filled_labels = torch.from_numpy(filled_labels)
-        filled_labels = torch.from_numpy(labels)
-
+        filled_labels = np.zeros((self._max_objects_per_image, 5))
+        if labels is not None:
+            filled_labels[range(len(labels))[: self._max_objects_per_image]] = labels[
+                : self._max_objects_per_image
+            ]
+        filled_labels = torch.from_numpy(filled_labels)
         return img_path, input_img, filled_labels
 
     def __len__(self):

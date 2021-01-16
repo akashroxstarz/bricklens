@@ -136,6 +136,24 @@ Implementation notes:
   - There is a LOT of complexity in the YOLO layer code. Need to dig in and understand
     this better.
 
+----
+Getting error with mismatch in shape from the linear-activation conv2d input to Yolo layer.
+
+In the sample code I see the conv2d layer has 24 channels for 3 classes and 9 boxes
+In the yolov2-voc.cfg there are 75 channels for 20 classes and 9 boxes
+In the yolov2-tiny.cfg there are 255 channels for 80 classes and 6 boxes
+In the yolov2-spp.cfg there are 255 channels for 80 classes and 9 boxes
+In the yolov2-openimages.cfg there are 1818 channels for 601 classes and 9 boxes
+In the yolov2.cfg there are 255 channels for 80 classes and 9 boxes
+
+Seems to be the number is (# classes * 3) + 15.
+Not sure where the 15 comes from.
+For my 40-class model it would be 135.
+
+
+
+
+
 
 
 

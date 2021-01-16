@@ -197,8 +197,8 @@ def build_targets(
     ty = torch.zeros(nB, nA, nG, nG)
     tw = torch.zeros(nB, nA, nG, nG)
     th = torch.zeros(nB, nA, nG, nG)
-    tconf = torch.ByteTensor(nB, nA, nG, nG).fill_(0)
-    tcls = torch.ByteTensor(nB, nA, nG, nG, nC).fill_(0)
+    tconf = torch.BoolTensor(nB, nA, nG, nG).fill_(False)
+    tcls = torch.BoolTensor(nB, nA, nG, nG, nC).fill_(False)
 
     nGT = 0
     nCorrect = 0
@@ -240,8 +240,8 @@ def build_targets(
             th[b, best_n, gj, gi] = math.log(gh / anchors[best_n][1] + 1e-16)
             # One-hot encoding of label
             target_label = int(target[b, t, 0])
-            tcls[b, best_n, gj, gi, target_label] = 1
-            tconf[b, best_n, gj, gi] = 1
+            tcls[b, best_n, gj, gi, target_label] = True
+            tconf[b, best_n, gj, gi] = True
 
             # Calculate iou between ground truth and best matching prediction
             iou = bbox_iou(gt_box, pred_box, x1y1x2y2=False)

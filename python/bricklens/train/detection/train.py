@@ -24,11 +24,12 @@ from torchvision import datasets, transforms
 import dataset
 from model import Darknet
 
+
 # Get command-line arguments.
 parser = argparse.ArgumentParser()
 parser.add_argument("--epochs", type=int, default=20, help="number of training epochs")
 parser.add_argument(
-    "--batch_size", type=int, default=2, help="size of each image batch"
+    "--batch_size", type=int, default=1, help="size of each image batch"
 )
 parser.add_argument(
     "--model_config_path",
@@ -88,9 +89,6 @@ print(args)
 cuda = torch.cuda.is_available() and args.use_cuda
 print(f"Using CUDA: {cuda}")
 device = "cuda:0" if cuda else "cpu"
-
-if cuda:
-    print("Initial CUDA memory usage:\n" + torch.cuda.memory_summary())
 
 # Create checkpoint directory.
 os.makedirs(args.checkpoint_dir, exist_ok=True)
@@ -158,15 +156,7 @@ for epoch in range(args.epochs):
         targets = Variable(targets.type(Tensor), requires_grad=False)
 
         optimizer.zero_grad()
-
-        if cuda:
-           print("Pre model CUDA memory usage:\n" + torch.cuda.memory_summary())
-
         loss = model(imgs, targets)
-
-        if cuda:
-           print("Post model CUDA memory usage:\n" + torch.cuda.memory_summary())
-
         loss.backward()
         optimizer.step()
 
@@ -192,6 +182,7 @@ for epoch in range(args.epochs):
         model.seen += imgs.size(0)
 
         # Log to WandB.
+        ldict = {}
         for index, param_group in enumerate(optimizer.param_groups):
             ldict[f"lr_{index}"] = param_group["lr"]
         wandb.log(ldict)

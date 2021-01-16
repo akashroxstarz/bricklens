@@ -590,7 +590,11 @@ modules:
     size: 1
     stride: 1
     pad: 1
-    filters: 24
+    # Size here must be: 3 * (# classes * 5)
+    # 3 comes from number of bounding boxes generated
+    # by the detector per cell. 5 is (class prob, x, y, w, h)
+    # of predicted box.
+    filters: 135
     activation: linear
 
   - type: yolo
@@ -681,7 +685,11 @@ modules:
     size: 1
     stride: 1
     pad: 1
-    filters: 24
+    # Size here must be: 3 * (# classes * 5)
+    # 3 comes from number of bounding boxes generated
+    # by the detector per cell. 5 is (class prob, x, y, w, h)
+    # of predicted box.
+    filters: 135
     activation: linear
 
   - type: yolo
@@ -772,7 +780,11 @@ modules:
     size: 1
     stride: 1
     pad: 1
-    filters: 24
+    # Size here must be: 3 * (# classes * 5)
+    # 3 comes from number of bounding boxes generated
+    # by the detector per cell. 5 is (class prob, x, y, w, h)
+    # of predicted box.
+    filters: 135
     activation: linear
 
   - type: yolo
