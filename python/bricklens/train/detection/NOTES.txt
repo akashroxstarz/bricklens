@@ -412,52 +412,24 @@ is chosen as "pred_box".
   This is probably the key to understanding how to interpret the predictions coming out of
   the model.
 
+So ... the conversion from raw prediction to grid coordinates is:
 
+ x1, x2 = box[0] - box[2] / 2, box[0] + box[2] / 2
+ y1, y2 = box[1] - box[3] / 2, box[1] + box[3] / 2
 
+(Note that this sometimes creates boxes that go off the edge of the image, but that's
+the nature of the beast.)
 
+To convert to pixels, we need to multiply by 'stride' which is 32 (in the case of the 13x13 grid)
 
+All right... this seems to "work".
 
+However, now we need to take NMS and so forth into account.
 
-
-
-
-
-
-
-
-MDW: Target gx: 6.453125
-MDW: Target gy: 0.8125
-MDW: Target gw: 0.59375
-MDW: Target gh: 0.8750000596046448
-MDW: Target gi: 6
-MDW: Target gj: 0
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+build_targets() is doing some funny stuff where it only considers the prediction box
+with the highest IoU against a ground-truth box when calculating the loss. Note that this
+means that prediction boxes with *higher confidence* scores but lower IoU against GT
+boxes are not considered. 
 
 
 

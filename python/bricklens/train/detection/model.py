@@ -133,9 +133,9 @@ class YOLOLayer(nn.Module):
         nG = x.size(2)
         stride = self.image_dim / nG
 
-        #print(
+        # print(
         #    f"MDW: YoloLayer.forward: x.size is {x.size()}, nA {nA} nB {nB} nG {nG} stride {stride}"
-        #)
+        # )
 
         # Tensors for cuda support
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
@@ -146,7 +146,7 @@ class YOLOLayer(nn.Module):
             x.view(nB, nA, self.bbox_attrs, nG, nG).permute(0, 1, 3, 4, 2).contiguous()
         )
 
-        #print(f"MDW: prediction.size() is {prediction.size()}")
+        # print(f"MDW: prediction.size() is {prediction.size()}")
 
         # Get outputs
         x = torch.sigmoid(prediction[..., 0])  # Center x
@@ -253,23 +253,24 @@ class YOLOLayer(nn.Module):
 
         else:
             # If not in training phase return predictions
-            return (pred_boxes, pred_conf, pred_cls)
+            # XXX MDW Hacking
+            # return (pred_boxes, pred_conf, pred_cls)
 
-            # output = torch.cat(
-            #    (
-            #        pred_boxes.view(nB, -1, 4) * stride,
-            #        pred_conf.view(nB, -1, 1),
-            #        pred_cls.view(nB, -1, self.num_classes),
-            #    ),
-            #    -1,
-            # )
+            output = torch.cat(
+                (
+                    pred_boxes.view(nB, -1, 4) * stride,
+                    pred_conf.view(nB, -1, 1),
+                    pred_cls.view(nB, -1, self.num_classes),
+                ),
+                -1,
+            )
 
             # foo = torch.split(output, [4, 1, 40], -1)
             # print(f"MDW: split is: {len(foo)}, {foo[0].size()} {foo[1].size()} {foo[2].size()}")
             # assert torch.all(torch.eq(foo[0].view(nB, 3, nG, nG, 4) / stride, pred_boxes))
             # assert torch.all(torch.eq(foo[1].view(nB, 3, nG, nG), pred_conf))
             # assert torch.all(torch.eq(foo[2].view(nB, 3, nG, nG, self.num_classes), pred_cls))
-            # return output
+            return output
 
 
 class Darknet(nn.Module):
@@ -326,7 +327,7 @@ class Darknet(nn.Module):
         if self._training:
             return sum(output)
         else:
-            return output
+            return torch.cat(output, 1)
 
     def load_weights(self, weights_path):
         """Parses and loads the weights stored in 'weights_path'"""

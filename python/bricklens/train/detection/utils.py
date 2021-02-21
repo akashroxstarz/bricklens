@@ -7,8 +7,8 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 
-#import matplotlib.pyplot as plt
-#import matplotlib.patches as patches
+# import matplotlib.pyplot as plt
+# import matplotlib.patches as patches
 
 
 def load_classes(path):
@@ -30,7 +30,7 @@ def weights_init_normal(m):
 
 
 def compute_ap(recall, precision):
-    """ Compute the average precision, given the recall and precision curves.
+    """Compute the average precision, given the recall and precision curves.
     Code originally from https://github.com/rbgirshick/py-faster-rcnn.
 
     # Arguments
@@ -71,6 +71,9 @@ def bbox_iou(box1, box2, x1y1x2y2=True):
         # Get the coordinates of bounding boxes
         b1_x1, b1_y1, b1_x2, b1_y2 = box1[:, 0], box1[:, 1], box1[:, 2], box1[:, 3]
         b2_x1, b2_y1, b2_x2, b2_y2 = box2[:, 0], box2[:, 1], box2[:, 2], box2[:, 3]
+
+    print(f"MDW: bbox_iou: b1 is ({b1_x1}, {b1_y1}) .. ({b1_x2}, {b1_y2})")
+    print(f"MDW: bbox_iou: b2 is ({b2_x1}, {b2_y1}) .. ({b2_x2}, {b2_y2})")
 
     # get the corrdinates of the intersection rectangle
     inter_rect_x1 = torch.max(b1_x1, b2_x1)
@@ -115,7 +118,11 @@ def bbox_iou_numpy(box1, box2):
     iw = np.maximum(iw, 0)
     ih = np.maximum(ih, 0)
 
-    ua = np.expand_dims((box1[:, 2] - box1[:, 0]) * (box1[:, 3] - box1[:, 1]), axis=1) + area - iw * ih
+    ua = (
+        np.expand_dims((box1[:, 2] - box1[:, 0]) * (box1[:, 3] - box1[:, 1]), axis=1)
+        + area
+        - iw * ih
+    )
 
     ua = np.maximum(ua, np.finfo(float).eps)
 
@@ -149,9 +156,13 @@ def non_max_suppression(prediction, num_classes, conf_thres=0.5, nms_thres=0.4):
         if not image_pred.size(0):
             continue
         # Get score and class with highest confidence
-        class_conf, class_pred = torch.max(image_pred[:, 5 : 5 + num_classes], 1, keepdim=True)
+        class_conf, class_pred = torch.max(
+            image_pred[:, 5 : 5 + num_classes], 1, keepdim=True
+        )
         # Detections ordered as (x1, y1, x2, y2, obj_conf, class_conf, class_pred)
-        detections = torch.cat((image_pred[:, :5], class_conf.float(), class_pred.float()), 1)
+        detections = torch.cat(
+            (image_pred[:, :5], class_conf.float(), class_pred.float()), 1
+        )
         # Iterate through all predicted classes
         unique_labels = detections[:, -1].cpu().unique()
         if prediction.is_cuda:
@@ -178,14 +189,25 @@ def non_max_suppression(prediction, num_classes, conf_thres=0.5, nms_thres=0.4):
             max_detections = torch.cat(max_detections).data
             # Add max detections to outputs
             output[image_i] = (
-                max_detections if output[image_i] is None else torch.cat((output[image_i], max_detections))
+                max_detections
+                if output[image_i] is None
+                else torch.cat((output[image_i], max_detections))
             )
 
     return output
 
 
 def build_targets(
-    pred_boxes, pred_conf, pred_cls, target, anchors, num_anchors, num_classes, grid_size, ignore_thres, img_dim
+    pred_boxes,
+    pred_conf,
+    pred_cls,
+    target,
+    anchors,
+    num_anchors,
+    num_classes,
+    grid_size,
+    ignore_thres,
+    img_dim,
 ):
     nB = target.size(0)
     nA = num_anchors
@@ -208,8 +230,7 @@ def build_targets(
     nCorrect = 0
     for b in range(nB):
         for t in range(target.shape[1]):
-            if target[b, t].sum() == 0:
-                print(f"MDW: SKIPPING TARGET {t}")
+            if target[b, t].sum() == 0:  # Skip empty GT boxes.
                 continue
             nGT += 1
 
@@ -233,7 +254,9 @@ def build_targets(
             # Get shape of gt box
             gt_box = torch.FloatTensor(np.array([0, 0, gw, gh])).unsqueeze(0)
             # Get shape of anchor box
-            anchor_shapes = torch.FloatTensor(np.concatenate((np.zeros((len(anchors), 2)), np.array(anchors)), 1))
+            anchor_shapes = torch.FloatTensor(
+                np.concatenate((np.zeros((len(anchors), 2)), np.array(anchors)), 1)
+            )
             # Calculate iou between gt and anchor shapes
             anch_ious = bbox_iou(gt_box, anchor_shapes)
             print(f"MDW: anch_ious is: {anch_ious}")
@@ -283,3 +306,23 @@ def build_targets(
 def to_categorical(y, num_classes):
     """ 1-hot encodes a tensor """
     return torch.from_numpy(np.eye(num_classes, dtype="uint8")[y])
+
+
+def rescale_boxes(boxes, current_dim, original_shape):
+    """ Rescales bounding boxes to the original shape """
+    print(f"MDW: recale_boxes: boxes.size() is {boxes.size()}")
+    print(f"MDW: current_dim is: {current_dim}")
+    print(f"MDW: original_shapee is: {original_shape}")
+    orig_h, orig_w = original_shape
+    # The amount of padding that was added
+    pad_x = max(orig_h - orig_w, 0) * (current_dim / max(original_shape))
+    pad_y = max(orig_w - orig_h, 0) * (current_dim / max(original_shape))
+    # Image height and width after padding is removed
+    unpad_h = current_dim - pad_y
+    unpad_w = current_dim - pad_x
+    # Rescale bounding boxes to dimension of original image
+    boxes[:, 0] = ((boxes[:, 0] - pad_x // 2) / unpad_w) * orig_w
+    boxes[:, 1] = ((boxes[:, 1] - pad_y // 2) / unpad_h) * orig_h
+    boxes[:, 2] = ((boxes[:, 2] - pad_x // 2) / unpad_w) * orig_w
+    boxes[:, 3] = ((boxes[:, 3] - pad_y // 2) / unpad_h) * orig_h
+    return boxes
