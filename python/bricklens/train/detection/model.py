@@ -133,9 +133,9 @@ class YOLOLayer(nn.Module):
         nG = x.size(2)
         stride = self.image_dim / nG
 
-        print(
-            f"MDW: YoloLayer.forward: x.size is {x.size()}, nA {nA} nB {nB} nG {nG} stride {stride}"
-        )
+        #print(
+        #    f"MDW: YoloLayer.forward: x.size is {x.size()}, nA {nA} nB {nB} nG {nG} stride {stride}"
+        #)
 
         # Tensors for cuda support
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
@@ -146,7 +146,7 @@ class YOLOLayer(nn.Module):
             x.view(nB, nA, self.bbox_attrs, nG, nG).permute(0, 1, 3, 4, 2).contiguous()
         )
 
-        print(f"MDW: prediction.size() is {prediction.size()}")
+        #print(f"MDW: prediction.size() is {prediction.size()}")
 
         # Get outputs
         x = torch.sigmoid(prediction[..., 0])  # Center x
@@ -162,15 +162,10 @@ class YOLOLayer(nn.Module):
         grid_y = (
             torch.arange(nG).repeat(nG, 1).t().view([1, 1, nG, nG]).type(FloatTensor)
         )
-        print(f"MDW: grid_x is {grid_x}")
-        print(f"MDW: grid_y is {grid_y}")
-
-        print(f"MDW: anchors are: {self.anchors}")
 
         scaled_anchors = FloatTensor(
             [(a_w / stride, a_h / stride) for a_w, a_h in self.anchors]
         )
-        print(f"MDW: scaled_anchors are: {scaled_anchors}")
 
         anchor_w = scaled_anchors[:, 0:1].view((1, nA, 1, 1))
         anchor_h = scaled_anchors[:, 1:2].view((1, nA, 1, 1))
@@ -258,10 +253,6 @@ class YOLOLayer(nn.Module):
 
         else:
             # If not in training phase return predictions
-            print(f"MDW: YoloLayer returning predictions")
-            print(f"MDW: pred_boxes size is {pred_boxes.size()}")
-            print(f"MDW: pred_conf size is {pred_conf.size()}")
-            print(f"MDW: pred_cls size is {pred_cls.size()}")
             return (pred_boxes, pred_conf, pred_cls)
 
             # output = torch.cat(
@@ -304,7 +295,7 @@ class Darknet(nn.Module):
         for i, (module_def, module) in enumerate(
             zip(self._module_defs, self._module_list)
         ):
-            print(f"MDW: Layer [{i}]: {module_def}")
+            # print(f"MDW: Layer [{i}]: {module_def}")
             # print(f"[{i}] Pre-layer CUDA memory usage:\n" + torch.cuda.memory_summary())
             # print(f"MDW: Layer [{i}] input size: {x.size()}")
 

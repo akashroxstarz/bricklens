@@ -32,16 +32,18 @@ def get_all_parts() -> List[Any]:
         [
             brick.__dict__[p]
             for p in brick.__dict__.keys()
-            if re.match(r"^Brick(\d+)X(\d+)$", p)
+            # XXX MDW HACKING
+            # if re.match(r"^Brick(\d+)X(\d+)$", p)
+            if p == "Brick2X4"
         ]
     )
-    parts.extend(
-        [
-            brick.__dict__[p]
-            for p in brick.__dict__.keys()
-            if re.match(r"^Brick(\d+)X(\d+)X(\d+)$", p)
-        ]
-    )
+#    parts.extend(
+#        [
+#            brick.__dict__[p]
+#            for p in brick.__dict__.keys()
+#            if re.match(r"^Brick(\d+)X(\d+)X(\d+)$", p)
+#        ]
+#    )
     return parts
 
 
@@ -51,8 +53,11 @@ def gen_colors(num_colors: int) -> List[Colour]:
     for index in range(num_colors):
         colorname = all_colors[index]
         # This one has a special meaning to the LDraw library.
-        if colorname != "Main_Colour":
-            retval.append(ColoursByName[colorname])
+        #if colorname != "Main_Colour":
+        #    retval.append(ColoursByName[colorname])
+        # XXX MDW Hacking
+        if colorname == "White":
+             retval.append(ColoursByName[colorname])
     return retval
 
 

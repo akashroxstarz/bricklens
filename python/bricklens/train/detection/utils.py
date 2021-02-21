@@ -200,39 +200,58 @@ def build_targets(
     tconf = torch.BoolTensor(nB, nA, nG, nG).fill_(False)
     tcls = torch.BoolTensor(nB, nA, nG, nG, nC).fill_(False)
 
+    print(f"MDW: build_targets: {nA} anchors, {nC} classes, {nG} grid size")
+    print(f"MDW: build_targets: target is: {target}")
+    print(f"MDW: build_targets: anchors is: {anchors}")
+
     nGT = 0
     nCorrect = 0
     for b in range(nB):
         for t in range(target.shape[1]):
             if target[b, t].sum() == 0:
+                print(f"MDW: SKIPPING TARGET {t}")
                 continue
             nGT += 1
+
+            print(f"MDW: Raw target: {target[b, t]}")
             # Convert to position relative to box
             gx = target[b, t, 1] * nG
             gy = target[b, t, 2] * nG
             gw = target[b, t, 3] * nG
             gh = target[b, t, 4] * nG
-            print(f"MDW: b {b} t {t} gx {gx} gy {gy} gw {gw} gh {gh}")
             # Get grid box indices
             gi = int(gx)
             gj = int(gy)
-            print(f"MDW: gi {gi} gj {gj}")
+
+            print(f"MDW: Target gx: {gx}")
+            print(f"MDW: Target gy: {gy}")
+            print(f"MDW: Target gw: {gw}")
+            print(f"MDW: Target gh: {gh}")
+            print(f"MDW: Target gi: {gi}")
+            print(f"MDW: Target gj: {gj}")
+
             # Get shape of gt box
             gt_box = torch.FloatTensor(np.array([0, 0, gw, gh])).unsqueeze(0)
-            print(f"MDW: gt_box {gt_box}")
             # Get shape of anchor box
             anchor_shapes = torch.FloatTensor(np.concatenate((np.zeros((len(anchors), 2)), np.array(anchors)), 1))
-            print(f"MDW: anchor_shapes {anchor_shapes}")
             # Calculate iou between gt and anchor shapes
             anch_ious = bbox_iou(gt_box, anchor_shapes)
+            print(f"MDW: anch_ious is: {anch_ious}")
+
             # Where the overlap is larger than threshold set mask to zero (ignore)
             conf_mask[b, anch_ious > ignore_thres, gj, gi] = 0
+            print(f"MDW: conf_mask is {conf_mask}")
+
             # Find the best matching anchor box
             best_n = np.argmax(anch_ious)
+            print(f"MDW: best_n is {best_n}")
+
             # Get ground truth box
             gt_box = torch.FloatTensor(np.array([gx, gy, gw, gh])).unsqueeze(0)
+            print(f"MDW: gt_box is {gt_box}")
             # Get the best prediction
             pred_box = pred_boxes[b, best_n, gj, gi].unsqueeze(0)
+            print(f"MDW: pred_box is {pred_box}")
             # Masks
             mask[b, best_n, gj, gi] = 1
             conf_mask[b, best_n, gj, gi] = 1
@@ -249,8 +268,12 @@ def build_targets(
 
             # Calculate iou between ground truth and best matching prediction
             iou = bbox_iou(gt_box, pred_box, x1y1x2y2=False)
+            print(f"MDW: IoU for prediction and GT box is: {iou}")
+
             pred_label = torch.argmax(pred_cls[b, best_n, gj, gi])
+            print(f"MDW: pred_label is {pred_label}, target_label is {target_label}")
             score = pred_conf[b, best_n, gj, gi]
+            print(f"MDW: score is {score}")
             if iou > 0.5 and pred_label == target_label and score > 0.5:
                 nCorrect += 1
 

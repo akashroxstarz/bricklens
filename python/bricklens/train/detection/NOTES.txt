@@ -276,6 +276,166 @@ bbox in *grid cell units*, not pixels and not image units. Okay.
 
 Let's see if this makes any sense.
 
+Generating smaller dataset for quick test runs, with only one piece in each image:
+
+poetry run bricklens/render/generate_detection_dataset.py --outdir detection_simple_100 --num_images 100 --width 416 --height 416 --num_parts 1 --background_parts 0 --num_colors 30 --detections_size 1 --pile_size 0 --overwrite
+
+(This is a hacked version of generate_detection_dataset which restrict itself to Brick2X4 pieces in
+the White color.)
+
+Training command line:
+
+poetry run bricklens/train/detection/train.py \
+  --epochs 100 \
+  --batch_size 1 \
+  --model_config_path bricklens/train/detection/config/yolov3.yml \
+  --dataset_config_path bricklens/train/detection/config/dataset_detection_simple_100.yml \
+  --checkpoint_dir checkpoints_simple_100
+
+Eval command line:
+
+poetry run bricklens/train/detection/eval.py \
+  --weights_path checkpoints_simple_100/checkpoint_99.weights \
+  --dataset_config_path bricklens/train/detection/config/dataset_detection_simple_100.yml \
+  --obj_threshold 0.02
+
+
+Details on how to use the model for inference here:
+
+https://towardsdatascience.com/object-detection-and-tracking-in-pytorch-b3cf1a696a98
+
+The author's code seems to be based on an earlier PyTorch impl of YOLOv3:
+
+https://github.com/eriklindernoren/PyTorch-YOLOv3/blob/master/detect.py
+
+which takes the raw detections from the model and converts them to (upper left, lower right)
+coordinates and then runs NMS on the result.
+
+This simply does:
+
+  def xywh2xyxy(x):
+    y = x.new(x.shape)
+    y[..., 0] = x[..., 0] - x[..., 2] / 2
+    y[..., 1] = x[..., 1] - x[..., 3] / 2
+    y[..., 2] = x[..., 0] + x[..., 2] / 2
+    y[..., 3] = x[..., 1] + x[..., 3] / 2
+    return y
+
+(Basically, x[0] and x[1] are the center x and y of the box, x[2] and x[3] are the
+box height and width, respectively.)
+
+
+And later, the boxes are scaled to image pixel coordinates using:
+
+  def rescale_boxes(boxes, current_dim, original_shape):
+    """ Rescales bounding boxes to the original shape """
+    orig_h, orig_w = original_shape
+    # The amount of padding that was added
+    pad_x = max(orig_h - orig_w, 0) * (current_dim / max(original_shape))
+    pad_y = max(orig_w - orig_h, 0) * (current_dim / max(original_shape))
+    # Image height and width after padding is removed
+    unpad_h = current_dim - pad_y
+    unpad_w = current_dim - pad_x
+    # Rescale bounding boxes to dimension of original image
+    boxes[:, 0] = ((boxes[:, 0] - pad_x // 2) / unpad_w) * orig_w
+    boxes[:, 1] = ((boxes[:, 1] - pad_y // 2) / unpad_h) * orig_h
+    boxes[:, 2] = ((boxes[:, 2] - pad_x // 2) / unpad_w) * orig_w
+    boxes[:, 3] = ((boxes[:, 3] - pad_y // 2) / unpad_h) * orig_h
+    return boxes
+
+Let's dig into what build_targets is doing.
+
+The original anchors for the 13x13 YOLO layer are:
+
+  [116, 90], [156, 198], [373, 326]
+
+The anchors passed into build_targets are:
+
+tensor([[ 3.6250,  2.8125], [ 4.8750,  6.1875], [11.6562, 10.1875]])
+
+Which are just the pixel width and height of each of the anchor boxes
+divided by 32 (the size of a single grid cell in 13x13 with a 416x416px image).
+In other words, these are in grid-cell.
+
+
+The raw ground-truth bounding box for image_00000.png is:
+
+3001_White 197 12 19 28
+
+And what is passed into build_targets is:
+
+tensor([0.0000, 0.4964, 0.0625, 0.0457, 0.0673])
+
+Which should be the center point of the box, scaled to 0.0-1.0.
+An indeed it is.
+
+0.4964 = (197 + (19/2)) / 416
+0.0625 = (12 + (28/2)) / 416
+0.0457 = 19 / 416
+0.0673 = 28 / 416
+
+For the ground truth box, the coordinates are scaled up
+into "grid cell" coordinates by multiplying by nG, the number
+of grid cells:
+
+gx = 13 * 0.4964 = 6.453
+gy = 13 * 0.0625 = 0.8125
+...
+
+Then the IoU is calculated between this ground truth box
+and each anchor box (in grid cell coordinates).
+
+For this we get:
+
+MDW: anch_ious is: tensor([0.1695, 0.0708, 0.0211])
+
+For some reason, anchor boxes with an IoU of > 0.5 with a ground truth box
+have the "conf_mask" set to 0, to ignore them down the line -- I am not sure why.
+
+The anchor box with the highest IoU is selected.
+
+The corresponding prediction -- that is, the prediction corresponding to the
+best-IoU anchor box for the grid cell *in which the ground truth box lies* (!!!)
+is chosen as "pred_box".
+
+** TO DO:
+
+- The above is used to calculate losses, but does not take NMS into account. So all bounding
+  boxes are potentially contributing to the loss, I think.
+
+- Look at pred_box. This should be the same as the prediction we are getting out of the model.
+  IoU with the GT box is being calculated as: 
+
+            iou = bbox_iou(gt_box, pred_box, x1y1x2y2=False)
+
+  ** Note the 'x1y1x2y2 = False' which means the coordinate system is different.
+  This is probably the key to understanding how to interpret the predictions coming out of
+  the model.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+MDW: Target gx: 6.453125
+MDW: Target gy: 0.8125
+MDW: Target gw: 0.59375
+MDW: Target gh: 0.8750000596046448
+MDW: Target gi: 6
+MDW: Target gj: 0
+
+
+
+
+
 
 
 

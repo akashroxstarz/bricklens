@@ -26,8 +26,6 @@ class ListDataset(Dataset):
     ):
         basedir = os.path.dirname(list_path)
 
-        print(f"MDW: list_path {list_path}")
-
         with open(list_path, "r") as infile:
             list_rows = infile.readlines()
 
@@ -81,7 +79,6 @@ class ListDataset(Dataset):
 
         h, w, _ = img.shape
 
-        print(f"MDW: image size {h}x{w}")
         dim_diff = np.abs(h - w)
         # Upper (left) and lower (right) padding
         pad1, pad2 = dim_diff // 2, dim_diff - dim_diff // 2
@@ -92,10 +89,8 @@ class ListDataset(Dataset):
         # Add padding
         input_img = np.pad(img, pad, "constant", constant_values=128) / 255.0
         padded_h, padded_w, _ = input_img.shape
-        print(f"MDW: padded image size {padded_h}x{padded_w}")
         # Resize and normalize
         input_img = resize(input_img, (*self._image_shape, 3), mode="reflect")
-        print(f"MDW: resized image is {input_img.shape}")
         # Channels-first
         input_img = np.transpose(input_img, (2, 0, 1))
         # As pytorch tensor
