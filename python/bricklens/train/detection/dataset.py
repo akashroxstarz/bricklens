@@ -26,14 +26,18 @@ class ListDataset(Dataset):
     ):
         basedir = os.path.dirname(list_path)
 
+        print(f"MDW: list_path {list_path}")
+
         with open(list_path, "r") as infile:
             list_rows = infile.readlines()
 
-        self._classes: Dict[str, float] = {}
+        self._classindices: Dict[str, float] = {}
+        self._classnames: Dict[int, str] = {}
         with open(classfile_path, "r") as infile:
             for row in infile:
                 classnum, classname = row.split()
-                self._classes[classname] = float(classnum)
+                self._classindices[classname] = float(classnum)
+                self._classnames[int(classnum)] = classname
 
         self._image_filenames: List[str] = []
         self._label_filenames: List[str] = []
@@ -50,9 +54,17 @@ class ListDataset(Dataset):
         self._image_shape = image_shape
         self._max_objects_per_image = max_objects_per_image
 
-    def _convert_class(self, class_name: str) -> float:
-        """Convert class name to a float value."""
-        return self._classes[class_name]
+    def classname_to_index(self, class_name: str) -> float:
+        """Convert class name to an index value."""
+        return self._classindices[class_name]
+
+    def classindex_to_name(self, class_index: float) -> str:
+        """Convert class index to name."""
+        return self._classnames[int(class_index)]
+
+    @property
+    def num_classes(self) -> int:
+        return len(self._classindices)
 
     def __getitem__(self, index: int) -> Tuple[str, torch.Tensor, List[torch.Tensor]]:
         """PyTorch Dataset getitem method."""
@@ -68,6 +80,8 @@ class ListDataset(Dataset):
         ), f"{img_path} has shape {img.shape}, expect three channels."
 
         h, w, _ = img.shape
+
+        print(f"MDW: image size {h}x{w}")
         dim_diff = np.abs(h - w)
         # Upper (left) and lower (right) padding
         pad1, pad2 = dim_diff // 2, dim_diff - dim_diff // 2
@@ -78,8 +92,10 @@ class ListDataset(Dataset):
         # Add padding
         input_img = np.pad(img, pad, "constant", constant_values=128) / 255.0
         padded_h, padded_w, _ = input_img.shape
+        print(f"MDW: padded image size {padded_h}x{padded_w}")
         # Resize and normalize
         input_img = resize(input_img, (*self._image_shape, 3), mode="reflect")
+        print(f"MDW: resized image is {input_img.shape}")
         # Channels-first
         input_img = np.transpose(input_img, (2, 0, 1))
         # As pytorch tensor
@@ -94,7 +110,7 @@ class ListDataset(Dataset):
 
         label_path = self._label_filenames[index % len(self._image_filenames)]
         labels = np.loadtxt(
-            label_path, converters={0: lambda s: self._convert_class(s.decode("utf-8"))}
+            label_path, converters={0: lambda s: self.classname_to_index(s.decode("utf-8"))}
         ).reshape(-1, 5)
 
         if len(labels) == 0:

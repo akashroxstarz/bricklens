@@ -150,6 +150,152 @@ Seems to be the number is (# classes * 3) + 15.
 Not sure where the 15 comes from.
 For my 40-class model it would be 135.
 
+---
+
+Interpreting model outputs:
+
+We have 40 classes.
+
+Yolo Layer 1 takes as input a tensor of size [1, 135, 13, 13] and produces a tensor of [1, 507, 45]
+
+The 135 is (40 * 3) + 15.
+
+nA = 3 (number of bounding boxes)
+nB = 1 (number of images in batch)
+nG = 13 (number of grid cells)
+stride = 32 (which is 416 / 13, i.e., size of each grid cell in pixels)
+
+The input is permuted into a tensor of size [1, 3, 13, 13, 45]
+
+So there are 3 bbox predictions for each of the 13x13 grid cells.
+The 45 values for each prediction are:
+  x (sigmoid applied)
+  y (sigmoid applied)
+  w
+  h
+  prediction confidence ("objectness score")
+  class pred (one value per class, 40 classes)
+
+These get reshapes into `pred_boxes`, `pred_conf`, and `pred_cls` with sizes:
+
+pred_boxes size is torch.Size([1, 3, 13, 13, 4])
+  - x, y, w, h for each box
+
+pred_conf size is torch.Size([1, 3, 13, 13])
+  - confidence for each box
+
+pred_cls size is torch.Size([1, 3, 13, 13, 40])
+  - per-class class probability for each box
+
+All of these get squashed into a single output tensor like so:
+
+   output = torch.cat(
+                (
+                    pred_boxes.view(nB, -1, 4) * stride,
+                    pred_conf.view(nB, -1, 1),
+                    pred_cls.view(nB, -1, self.num_classes),
+                ),
+                -1,
+            )
+
+To use the predictions in my own code I need to un-squash these tensors.
+
+The squashing does this:
+
+MDW: pred_boxes is now torch.Size([1, 507, 4])
+MDW: pred_conf is now torch.Size([1, 507, 1])
+MDW: pred_cls is now torch.Size([1, 507, 40])
+
+WHich results in a tensor of [1, 507, 45] when they are concatenated.
+
+This code can be used to reverse the concatenation for a single YOLO layer:
+
+  foo = torch.split(output, [4, 1, 40], -1)
+  assert torch.all(torch.eq(foo[0].view(nB, 3, nG, nG, 4) / stride, pred_boxes))
+  assert torch.all(torch.eq(foo[1].view(nB, 3, nG, nG), pred_conf))
+  assert torch.all(torch.eq(foo[2].view(nB, 3, nG, nG, self.num_classes), pred_cls))
+
+---
+
+How do we interpret the bounding box coords produced by the model?
+
+Bounding boxes read by the dataset code convert from
+  x y w h
+in pixels to
+
+  cx cy sw sh
+
+where (cx, cy) is the center of the bounding box, scaled to the (padded) width and height of the
+image -- e.g., between 0.0 and 1.0. sw and sh are scaled to the (padded) size of the image as well.
+
+The input images are 512x512 but are resized to 416x416 in the dataset code.
+
+What is coming out "raw" from the model is (x, y, w, h) with respect to the (fixed) anchor boxes.
+The model code seems to scale these back to pixels before spitting them out, I think?
+But did they get scaled to (416x416) not (512x512)?
+
+*** Need to look at the 'build_targets' code which does the matching between predicted and target
+boxes, to see how it does that scaling and comparison.
+
+For the first YOLO layer, we have 3 anchor boxe sizes (these are width/height):
+  [116, 90], [156, 198], [373, 326]
+
+(I don't quite follow why the first layer only considers these three)
+
+In YOLOLayer.forward(), these are scaled by 'stride', which is 32 pixels (for the 13x13 grid size).
+Why?
+  - This would seem to map the anchor box size to a grid cell
+  - However, that is not my understanding of how we should interpret the anchor box sizes!
+
+The model's prediction is shapeed [1, 3, 13, 13, 45], which is:
+  For each of the 13x13 grid cells
+    - 3 bounding boxes
+      - Each of which has 45 parameters
+        - x, y, w, h, objectness
+        - plus 40 class probabilities
+
+The raw x, y, w, h coming from the model are interpreted as:
+
+  x = torch.sigmoid(raw_x) + grid_x
+  y = torch.sigmoid(raw_y) + grid_y
+  w = torch.exp(raw_w) * scaled_anchor_w
+  h = torch.exp(raw_h) * scaled_anchor_h
+
+So we are now operating in "grid coordinates", ranging from 0 ... 12 (for example)
+Each of the 13x13 grid cells is predicting 3 bounding boxes, whose centers
+might lie *outside* that particular grid cell (based on the application of the
+sigmoid function to the x and y coordinates).
+
+By scaling the anchor box sizes to "grid cell units", that means that the
+final 'w' and 'h' values are in terms of some number of grid cells, e.g.,
+a 300 pixel wide anchor box on a 416x416 image base with 13x13 cells would
+end up spanning (300 / 32) = 9.37 grid cells.
+
+OK, so the final pred_bboxes passed to build_targets are the *center* of the
+bbox in *grid cell units*, not pixels and not image units. Okay.
+
+Let's see if this makes any sense.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

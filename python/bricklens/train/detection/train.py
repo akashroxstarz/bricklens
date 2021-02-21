@@ -8,21 +8,50 @@ from __future__ import division
 
 import argparse
 import datetime
+import gc
 import os
 import sys
 import time
+import tracemalloc
 
+import dataset
 import torch
 import torch.optim as optim
-import wandb
 import yaml
+from model import Darknet
+from pympler import muppy, summary, tracker
 from torch.autograd import Variable
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
-import dataset
-from model import Darknet
+import wandb
+
+# Start tracing memory allocations.
+tracemalloc.start()
+
+# Set up Pympler tracker.
+tr = tracker.SummaryTracker()
+
+
+def memory_stats(device):
+    print("Memory stats -------------------------------------------------")
+
+    all_objects = muppy.get_objects()
+    sum1 = summary.summarize(all_objects)
+    summary.print_(sum1)
+
+    tr.print_diff()
+
+    snapshot = tracemalloc.take_snapshot()
+    top_stats = snapshot.statistics("lineno")
+    for stat in top_stats[:10]:
+        print(stat)
+
+    print("End memory stats ---------------------------------------------")
+    print("CUDA stats ---------------------------------------------------")
+    print(torch.cuda.memory_summary(device))
+    print("End CUDA stats -----------------------------------------------")
 
 
 # Get command-line arguments.
@@ -99,7 +128,6 @@ with open(args.dataset_config_path, "r") as stream:
 train_path = data_config["train"]
 classfile_path = data_config["classes"]
 
-
 # Get model parameters.
 with open(args.model_config_path, "r") as stream:
     model_config = yaml.safe_load(stream)
@@ -119,6 +147,8 @@ if cuda:
 model.train()
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
+print("Memory usage before dataloader instantiation:")
+memory_stats(device)
 
 # Create dataloader.
 dataloader = torch.utils.data.DataLoader(
@@ -147,7 +177,11 @@ config = wandb.config
 config.max_epochs = args.epochs
 config.initial_lr = initial_lr
 config.gamma = gamma
-wandb.watch(model)
+# XXX MDW - See if this helps with memory usage.
+# wandb.watch(model)
+
+print("Memory usage before training:")
+memory_stats(device)
 
 # Do the training loop.
 for epoch in range(args.epochs):
@@ -181,6 +215,9 @@ for epoch in range(args.epochs):
 
         model.seen += imgs.size(0)
 
+        if batch_i % 100 == 0:
+            memory_stats(device)
+
         # Log to WandB.
         ldict = {}
         for index, param_group in enumerate(optimizer.param_groups):
@@ -197,5 +234,9 @@ for epoch in range(args.epochs):
         wandb.log({"recall": model.losses["recall"]})
 
     if epoch % args.checkpoint_interval == 0:
-        model.save_weights(os.path.join(args.checkpoint_dir, f"checkpoint_{epoch}.weights"))
+        model.save_weights(
+            os.path.join(args.checkpoint_dir, f"checkpoint_{epoch}.weights")
+        )
     scheduler.step()
+    print(f"Memory usage after epoch {epoch}:")
+    memory_stats(device)

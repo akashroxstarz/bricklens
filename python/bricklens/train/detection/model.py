@@ -15,7 +15,9 @@ from torch.autograd import Variable
 from utils import build_targets
 
 
-def create_modules(module_config: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]], nn.ModuleList]:
+def create_modules(
+    module_config: Dict[str, Any], training: bool
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]], nn.ModuleList]:
     """
     Constructs module list of layer blocks from module configuration in module_config.
     Returns:
@@ -88,7 +90,7 @@ def create_modules(module_config: Dict[str, Any]) -> Tuple[Dict[str, Any], List[
             num_classes = int(module_def["classes"])
             img_height = int(hyperparams["height"])
             # Define detection layer
-            yolo_layer = YOLOLayer(anchors, num_classes, img_height)
+            yolo_layer = YOLOLayer(anchors, num_classes, img_height, training)
             modules.add_module("yolo_%d" % i, yolo_layer)
         else:
             raise ValueError(f"Unrecognized module type: {module_def}")
@@ -110,7 +112,7 @@ class EmptyLayer(nn.Module):
 class YOLOLayer(nn.Module):
     """YOLO detection layer."""
 
-    def __init__(self, anchors, num_classes, img_dim):
+    def __init__(self, anchors, num_classes, img_dim, training=True):
         super(YOLOLayer, self).__init__()
         self.anchors = anchors
         self.num_anchors = len(anchors)
@@ -119,6 +121,7 @@ class YOLOLayer(nn.Module):
         self.image_dim = img_dim
         self.ignore_thres = 0.5
         self.lambda_coord = 1
+        self._training = training
 
         self.mse_loss = nn.MSELoss(size_average=True)  # Coordinate loss
         self.bce_loss = nn.BCELoss(size_average=True)  # Confidence loss
@@ -130,6 +133,10 @@ class YOLOLayer(nn.Module):
         nG = x.size(2)
         stride = self.image_dim / nG
 
+        print(
+            f"MDW: YoloLayer.forward: x.size is {x.size()}, nA {nA} nB {nB} nG {nG} stride {stride}"
+        )
+
         # Tensors for cuda support
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
         LongTensor = torch.cuda.LongTensor if x.is_cuda else torch.LongTensor
@@ -138,6 +145,8 @@ class YOLOLayer(nn.Module):
         prediction = (
             x.view(nB, nA, self.bbox_attrs, nG, nG).permute(0, 1, 3, 4, 2).contiguous()
         )
+
+        print(f"MDW: prediction.size() is {prediction.size()}")
 
         # Get outputs
         x = torch.sigmoid(prediction[..., 0])  # Center x
@@ -148,13 +157,21 @@ class YOLOLayer(nn.Module):
         pred_cls = torch.sigmoid(prediction[..., 5:])  # Cls pred.
 
         # Calculate offsets for each grid
+        # grid_x and grid_y are filled with 0, 1, ... nG
         grid_x = torch.arange(nG).repeat(nG, 1).view([1, 1, nG, nG]).type(FloatTensor)
         grid_y = (
             torch.arange(nG).repeat(nG, 1).t().view([1, 1, nG, nG]).type(FloatTensor)
         )
+        print(f"MDW: grid_x is {grid_x}")
+        print(f"MDW: grid_y is {grid_y}")
+
+        print(f"MDW: anchors are: {self.anchors}")
+
         scaled_anchors = FloatTensor(
             [(a_w / stride, a_h / stride) for a_w, a_h in self.anchors]
         )
+        print(f"MDW: scaled_anchors are: {scaled_anchors}")
+
         anchor_w = scaled_anchors[:, 0:1].view((1, nA, 1, 1))
         anchor_h = scaled_anchors[:, 1:2].view((1, nA, 1, 1))
 
@@ -165,7 +182,10 @@ class YOLOLayer(nn.Module):
         pred_boxes[..., 2] = torch.exp(w.data) * anchor_w
         pred_boxes[..., 3] = torch.exp(h.data) * anchor_h
 
-        # Training
+        if self._training:
+            assert targets is not None
+
+        # Calculate loss if we were provided targets
         if targets is not None:
 
             if x.is_cuda:
@@ -221,6 +241,9 @@ class YOLOLayer(nn.Module):
             )
             loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls
 
+        # Training
+        if self._training:
+
             return (
                 loss,
                 loss_x.item(),
@@ -235,39 +258,55 @@ class YOLOLayer(nn.Module):
 
         else:
             # If not in training phase return predictions
-            output = torch.cat(
-                (
-                    pred_boxes.view(nB, -1, 4) * stride,
-                    pred_conf.view(nB, -1, 1),
-                    pred_cls.view(nB, -1, self.num_classes),
-                ),
-                -1,
-            )
-            return output
+            print(f"MDW: YoloLayer returning predictions")
+            print(f"MDW: pred_boxes size is {pred_boxes.size()}")
+            print(f"MDW: pred_conf size is {pred_conf.size()}")
+            print(f"MDW: pred_cls size is {pred_cls.size()}")
+            return (pred_boxes, pred_conf, pred_cls)
+
+            # output = torch.cat(
+            #    (
+            #        pred_boxes.view(nB, -1, 4) * stride,
+            #        pred_conf.view(nB, -1, 1),
+            #        pred_cls.view(nB, -1, self.num_classes),
+            #    ),
+            #    -1,
+            # )
+
+            # foo = torch.split(output, [4, 1, 40], -1)
+            # print(f"MDW: split is: {len(foo)}, {foo[0].size()} {foo[1].size()} {foo[2].size()}")
+            # assert torch.all(torch.eq(foo[0].view(nB, 3, nG, nG, 4) / stride, pred_boxes))
+            # assert torch.all(torch.eq(foo[1].view(nB, 3, nG, nG), pred_conf))
+            # assert torch.all(torch.eq(foo[2].view(nB, 3, nG, nG, self.num_classes), pred_cls))
+            # return output
 
 
 class Darknet(nn.Module):
     """YOLOv3 object detection model."""
 
-    def __init__(self, module_config: Dict[str, Any], img_size: int = 416):
+    def __init__(
+        self, module_config: Dict[str, Any], img_size: int = 416, training=True
+    ):
         super(Darknet, self).__init__()
-        self._hyperparams, self._module_defs, self._module_list = create_modules(module_config)
+        self._hyperparams, self._module_defs, self._module_list = create_modules(
+            module_config, training
+        )
         self._img_size = img_size
+        self._training = training
         self.seen = 0
         self._header_info = np.array([0, 0, 0, self.seen, 0])
         self._loss_names = ["x", "y", "w", "h", "conf", "cls", "recall", "precision"]
 
     def forward(self, x: torch.Tensor, targets: Optional[List[torch.Tensor]] = None):
-        is_training = targets is not None
         output = []
         self.losses = defaultdict(float)
         layer_outputs = []
         for i, (module_def, module) in enumerate(
             zip(self._module_defs, self._module_list)
         ):
-            # print(f"Layer [{i}]: {module_def}")
+            print(f"MDW: Layer [{i}]: {module_def}")
             # print(f"[{i}] Pre-layer CUDA memory usage:\n" + torch.cuda.memory_summary())
-            # print(f"Layer [{i}] input size: {x.size()}")
+            # print(f"MDW: Layer [{i}] input size: {x.size()}")
 
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
@@ -279,36 +318,39 @@ class Darknet(nn.Module):
                 x = layer_outputs[-1] + layer_outputs[layer_i]
             elif module_def["type"] == "yolo":
                 # Train phase: get loss
-                if is_training:
+                if self._training:
                     x, *losses = module[0](x, targets)
                     for name, loss in zip(self._loss_names, losses):
                         self.losses[name] += loss
                 # Test phase: Get detections
                 else:
-                    x = module(x)
+                    x = module[0](x, targets)
                 output.append(x)
-            # print(f"Layer [{i}] output size: {x.size()}")
+            # print(f"MDW: Layer [{i}] output size: {x.size()}")
             layer_outputs.append(x)
 
         self.losses["recall"] /= 3
         self.losses["precision"] /= 3
-        return sum(output) if is_training else torch.cat(output, 1)
+        # print(f"MDW: output is {output}")
+        if self._training:
+            return sum(output)
+        else:
+            return output
 
     def load_weights(self, weights_path):
         """Parses and loads the weights stored in 'weights_path'"""
 
         # Open the weights file
-        fp = open(weights_path, "rb")
-        header = np.fromfile(
-            fp, dtype=np.int32, count=5
-        )  # First five are header values
+        with open(weights_path, "rb") as fp:
+            header = np.fromfile(
+                fp, dtype=np.int32, count=5
+            )  # First five are header values
 
-        # Needed to write header when saving weights
-        self._header_info = header
+            # Needed to write header when saving weights
+            self._header_info = header
 
-        self.seen = header[3]
-        weights = np.fromfile(fp, dtype=np.float32)  # The rest are weights
-        fp.close()
+            self.seen = header[3]
+            weights = np.fromfile(fp, dtype=np.float32)  # The rest are weights
 
         ptr = 0
         for i, (module_def, module) in enumerate(
@@ -360,34 +402,32 @@ class Darknet(nn.Module):
                 conv_layer.weight.data.copy_(conv_w)
                 ptr += num_w
 
-    """
+    def save_weights(self, path, cutoff=-1):
+        """
         @:param path    - path of the new weights file
         @:param cutoff  - save layers between 0 and cutoff (cutoff = -1 -> all are saved)
-    """
+        """
+        with open(path, "wb") as fp:
+            self._header_info[3] = self.seen
+            self._header_info.tofile(fp)
 
-    def save_weights(self, path, cutoff=-1):
-
-        fp = open(path, "wb")
-        self._header_info[3] = self.seen
-        self._header_info.tofile(fp)
-
-        # Iterate through layers
-        for i, (module_def, module) in enumerate(
-            zip(self._module_defs[:cutoff], self._module_list[:cutoff])
-        ):
-            if module_def["type"] == "convolutional":
-                conv_layer = module[0]
-                # If batch norm, load bn first
-                if "batch_normalize" in module_def:
-                    bn_layer = module[1]
-                    bn_layer.bias.data.cpu().numpy().tofile(fp)
-                    bn_layer.weight.data.cpu().numpy().tofile(fp)
-                    bn_layer.running_mean.data.cpu().numpy().tofile(fp)
-                    bn_layer.running_var.data.cpu().numpy().tofile(fp)
-                # Load conv bias
-                else:
-                    conv_layer.bias.data.cpu().numpy().tofile(fp)
-                # Load conv weights
-                conv_layer.weight.data.cpu().numpy().tofile(fp)
+            # Iterate through layers
+            for i, (module_def, module) in enumerate(
+                zip(self._module_defs[:cutoff], self._module_list[:cutoff])
+            ):
+                if module_def["type"] == "convolutional":
+                    conv_layer = module[0]
+                    # If batch norm, load bn first
+                    if "batch_normalize" in module_def:
+                        bn_layer = module[1]
+                        bn_layer.bias.data.cpu().numpy().tofile(fp)
+                        bn_layer.weight.data.cpu().numpy().tofile(fp)
+                        bn_layer.running_mean.data.cpu().numpy().tofile(fp)
+                        bn_layer.running_var.data.cpu().numpy().tofile(fp)
+                    # Load conv bias
+                    else:
+                        conv_layer.bias.data.cpu().numpy().tofile(fp)
+                    # Load conv weights
+                    conv_layer.weight.data.cpu().numpy().tofile(fp)
 
         fp.close()
