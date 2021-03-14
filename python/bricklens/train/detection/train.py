@@ -15,6 +15,7 @@ import time
 import tracemalloc
 
 import dataset
+import numpy as np
 import torch
 import torch.optim as optim
 import yaml
@@ -63,7 +64,7 @@ parser.add_argument(
 parser.add_argument(
     "--model_config_path",
     type=str,
-    default="bricklens/train/detection/config/yolov3.yml",
+    default="bricklens/train/detection/config/yolov3-mscoco.yml",
     help="Path to model config file",
 )
 parser.add_argument(
@@ -71,6 +72,12 @@ parser.add_argument(
     type=str,
     default="bricklens/train/detection/config/dataset.yml",
     help="Path to dataset config file",
+)
+parser.add_argument(
+    "--mscoco_path",
+    type=str,
+    default=None,
+    help="Path to root of MSCOCO dataset",
 )
 parser.add_argument(
     "--weights_path",
@@ -122,11 +129,51 @@ device = "cuda:0" if cuda else "cpu"
 # Create checkpoint directory.
 os.makedirs(args.checkpoint_dir, exist_ok=True)
 
-# Get dataset configuration.
-with open(args.dataset_config_path, "r") as stream:
-    data_config = yaml.safe_load(stream)
-train_path = data_config["train"]
-classfile_path = data_config["classes"]
+if args.mscoco_path is not None:
+    coco_train_path = os.path.join(args.mscoco_path, "train2017")
+    coco_train_annotations_path = os.path.join(
+        args.mscoco_path, "annotations", "instances_train2017.json"
+    )
+    coco_val_path = os.path.join(args.mscoco_path, "val2017")
+    coco_val_annotations_path = os.path.join(
+        args.mscoco_path, "annotations", "instances_val2017.json"
+    )
+    train_dataloader = torch.utils.data.DataLoader(
+        dataset.CocoDataset(coco_train_path, coco_train_annotations_path),
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.n_cpu,
+    )
+    val_dataloader = torch.utils.data.DataLoader(
+        dataset.CocoDataset(coco_val_path, coco_val_annotations_path),
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.n_cpu,
+    )
+
+else:
+    # Get dataset configuration.
+    with open(args.dataset_config_path, "r") as stream:
+        data_config = yaml.safe_load(stream)
+    train_path = data_config["train"]
+    val_path = data_config["val"]
+    classfile_path = data_config["classes"]
+
+    # Create dataloaders.
+    train_dataloader = torch.utils.data.DataLoader(
+        dataset.ListDataset(train_path, classfile_path),
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.n_cpu,
+    )
+
+    val_dataloader = torch.utils.data.DataLoader(
+        dataset.ListDataset(val_path, classfile_path),
+        batch_size=1,
+        shuffle=False,
+        num_workers=args.n_cpu,
+    )
+
 
 # Get model parameters.
 with open(args.model_config_path, "r") as stream:
@@ -144,20 +191,7 @@ if cuda:
 if cuda:
     print("Model CUDA memory usage:\n" + torch.cuda.memory_summary())
 
-model.train()
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
-
-print("Memory usage before dataloader instantiation:")
-memory_stats(device)
-
-# Create dataloader.
-dataloader = torch.utils.data.DataLoader(
-    dataset.ListDataset(train_path, classfile_path),
-    batch_size=args.batch_size,
-    shuffle=False,
-    num_workers=args.n_cpu,
-)
-
 
 # Create optimizer.
 initial_lr = float(model_config["hyperparams"]["initial_lr"])
@@ -177,18 +211,15 @@ config = wandb.config
 config.max_epochs = args.epochs
 config.initial_lr = initial_lr
 config.gamma = gamma
-# XXX MDW - See if this helps with memory usage.
-# wandb.watch(model)
-
-print("Memory usage before training:")
-memory_stats(device)
 
 # Do the training loop.
 for epoch in range(args.epochs):
-    for batch_i, (_, imgs, targets) in enumerate(dataloader):
+    # Run training batches.
+    for batch_i, (imgs, targets) in enumerate(train_dataloader):
         imgs = Variable(imgs.type(Tensor))
         targets = Variable(targets.type(Tensor), requires_grad=False)
 
+        model.train()
         optimizer.zero_grad()
         loss = model(imgs, targets)
         loss.backward()
@@ -200,7 +231,7 @@ for epoch in range(args.epochs):
                 epoch,
                 args.epochs,
                 batch_i,
-                len(dataloader),
+                len(train_dataloader),
                 model.losses["x"],
                 model.losses["y"],
                 model.losses["w"],
@@ -214,9 +245,6 @@ for epoch in range(args.epochs):
         )
 
         model.seen += imgs.size(0)
-
-        if batch_i % 100 == 0:
-            memory_stats(device)
 
         # Log to WandB.
         ldict = {}
@@ -233,10 +261,44 @@ for epoch in range(args.epochs):
         wandb.log({"precision": model.losses["precision"]})
         wandb.log({"recall": model.losses["recall"]})
 
+    # Run validation.
+    with torch.no_grad():
+        val_losses = []
+        for batch_i, (imgs, targets) in enumerate(val_dataloader):
+            imgs = Variable(imgs.type(Tensor))
+            targets = Variable(targets.type(Tensor), requires_grad=False)
+            model.eval()
+            loss = model(imgs, targets)
+            print(
+                "[Epoch %d/%d, Val batch %d/%d] [Losses: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f, recall: %.5f, precision: %.5f]"
+                % (
+                    epoch,
+                    args.epochs,
+                    batch_i,
+                    len(val_dataloader),
+                    model.losses["x"],
+                    model.losses["y"],
+                    model.losses["w"],
+                    model.losses["h"],
+                    model.losses["conf"],
+                    model.losses["cls"],
+                    loss.item(),
+                    model.losses["recall"],
+                    model.losses["precision"],
+                )
+            )
+            val_losses.append(loss.item())
+
+        val_loss = np.mean(val_losses)
+        wandb.log({"val_loss": val_loss})
+
+    # Save checkpoint.
     if epoch % args.checkpoint_interval == 0:
         model.save_weights(
             os.path.join(args.checkpoint_dir, f"checkpoint_{epoch}.weights")
         )
+
+    # Update LR scheduler.
     scheduler.step()
-    print(f"Memory usage after epoch {epoch}:")
-    memory_stats(device)
+    # print(f"Memory usage after epoch {epoch}:")
+    # memory_stats(device)
