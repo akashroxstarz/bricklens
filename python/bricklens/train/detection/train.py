@@ -17,6 +17,8 @@ import tracemalloc
 import dataset
 import numpy as np
 import torch
+import torch.nn
+import torch.nn.init as nninit
 import torch.optim as optim
 import yaml
 from model import Darknet
@@ -64,25 +66,25 @@ parser.add_argument(
 parser.add_argument(
     "--model_config_path",
     type=str,
-    default="bricklens/train/detection/config/yolov3-mscoco.yml",
+    default="bricklens/train/detection/config/yolov3.yml",
     help="Path to model config file",
 )
 parser.add_argument(
     "--dataset_config_path",
     type=str,
-    default="bricklens/train/detection/config/dataset.yml",
+    default="bricklens/train/detection/config/dataset_detection_simple_1000.yml",
     help="Path to dataset config file",
 )
 parser.add_argument(
     "--mscoco_path",
     type=str,
     default=None,
-    help="Path to root of MSCOCO dataset",
+    help="Path to root of MSCOCO dataset. Overrides --dataset_config_path.",
 )
 parser.add_argument(
     "--weights_path",
     type=str,
-    default="config/yolov3.weights",
+    default=None,
     help="path to weights file",
 )
 parser.add_argument(
@@ -141,7 +143,7 @@ if args.mscoco_path is not None:
     train_dataloader = torch.utils.data.DataLoader(
         dataset.CocoDataset(coco_train_path, coco_train_annotations_path),
         batch_size=args.batch_size,
-        shuffle=False,
+        shuffle=True,
         num_workers=args.n_cpu,
     )
     val_dataloader = torch.utils.data.DataLoader(
@@ -163,7 +165,7 @@ else:
     train_dataloader = torch.utils.data.DataLoader(
         dataset.ListDataset(train_path, classfile_path),
         batch_size=args.batch_size,
-        shuffle=False,
+        shuffle=True,
         num_workers=args.n_cpu,
     )
 
@@ -174,7 +176,6 @@ else:
         num_workers=args.n_cpu,
     )
 
-
 # Get model parameters.
 with open(args.model_config_path, "r") as stream:
     model_config = yaml.safe_load(stream)
@@ -184,11 +185,18 @@ model = Darknet(model_config)
 print(f"MDW: model is:\n{model}")
 if args.weights_path is not None and os.path.exists(args.weights_path):
     model.load_weights(args.weights_path)
-    # model.apply(weights_init_normal)
-if cuda:
-    model = model.cuda()
+else:
+    # Initialize weights using Xavier.
+    def weights_init(m):
+        if isinstance(m, torch.nn.Conv2d):
+            nninit.xavier_uniform_(m.weight.data)
+            if m.bias is not None:
+                nninit.zeros_(m.bias.data)
+
+    model.apply(weights_init)
 
 if cuda:
+    model = model.cuda()
     print("Model CUDA memory usage:\n" + torch.cuda.memory_summary())
 
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
@@ -221,7 +229,7 @@ for epoch in range(args.epochs):
 
         model.train()
         optimizer.zero_grad()
-        loss = model(imgs, targets)
+        predictions, loss = model(imgs, targets)
         loss.backward()
         optimizer.step()
 
@@ -245,6 +253,7 @@ for epoch in range(args.epochs):
         )
 
         model.seen += imgs.size(0)
+        print(f"model.seen is now {model.seen}")
 
         # Log to WandB.
         ldict = {}

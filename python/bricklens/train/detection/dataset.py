@@ -59,7 +59,7 @@ class ListDataset(Dataset):
 
     def classindex_to_name(self, class_index: float) -> str:
         """Convert class index to name."""
-        return self._classnames[int(class_index)]
+        return self._classnames.get(int(class_index), f"<unknown class {class_index}>")
 
     @property
     def num_classes(self) -> int:
@@ -139,7 +139,7 @@ class ListDataset(Dataset):
                 : self._max_objects_per_image
             ]
         filled_labels = torch.from_numpy(filled_labels)
-        return input_img, filled_labels
+        return img_path, input_img, filled_labels
 
     def __len__(self):
         return len(self._image_filenames)
@@ -155,6 +155,7 @@ class CocoDataset(Dataset):
         image_shape: Tuple[int, int] = (416, 416),
         max_objects_per_image: int = 20,
     ):
+        self._root_path = root_path
         self._coco = dset.CocoDetection(root=root_path, annFile=ann_file_path)
 
         self._image_shape = image_shape
@@ -162,12 +163,18 @@ class CocoDataset(Dataset):
 
     @property
     def num_classes(self) -> int:
-        return len(self._classindices)
+        return len(self._coco.coco.dataset["categories"])
 
     def __getitem__(self, index: int) -> Tuple[str, torch.Tensor, List[torch.Tensor]]:
         """PyTorch Dataset getitem method."""
 
         img, raw_labels = self._coco[index]
+        print(f"MDW: img is: {img}")
+        # Bit of a hack here to get the filename.
+        img_id = self._coco.ids[index]
+        fname = self._coco.coco.loadImgs(img_id)[0]["file_name"]
+        fname = os.path.join(self._root_path, fname)
+        print(f"MDW: fname is: {fname}")
 
         # ---------
         #  Image
@@ -202,15 +209,33 @@ class CocoDataset(Dataset):
         # ---------
 
         # Map from MSCOCO annotation format to what we're using internally.
-        labels = [
-            [x["category_id"]-1, x["bbox"][0], x["bbox"][1], x["bbox"][2], x["bbox"][3]]
-            for x in raw_labels
-        ]
+        labels = []
+        for label in raw_labels:
+            catid = label["category_id"]
+            if catid >= self.num_classes:
+                # PJReddie's pretrained YOLO3 for MSCOCO mistakenly uses only 80 classes.
+                # We ignore GT labels outside of this range.
+                continue
+            catname = self.classindex_to_name(label["category_id"])
+            print(
+                f"MDW: GT cat {label['category_id']} name {catname} bbox {label['bbox']}"
+            )
+            # MSCOCO categories are 1-indexed, so we subtract one from the ID.
+            labels.append(
+                [
+                    label["category_id"] - 1,
+                    label["bbox"][0],
+                    label["bbox"][1],
+                    label["bbox"][2],
+                    label["bbox"][3],
+                ]
+            )
+
         labels = np.array(labels).reshape(-1, 5)
 
         if len(labels) == 0:
             # Empty file, no labels.
-            return input_img, torch.from_numpy(labels)
+            return fname, input_img, torch.from_numpy(labels)
 
         # Extract top-left and bottom-right coords for unpadded + unscaled image
         x1 = labels[:, 1]
@@ -237,7 +262,23 @@ class CocoDataset(Dataset):
                 : self._max_objects_per_image
             ]
         filled_labels = torch.from_numpy(filled_labels)
-        return input_img, filled_labels
+        return fname, input_img, filled_labels
 
     def __len__(self):
         return len(self._coco)
+
+    def classname_to_index(self, class_name: str) -> float:
+        """Convert class name to an index value."""
+        return self._coco.coco.getCatIds(catNms=[class_name])
+
+    def classindex_to_name(self, class_index: float) -> str:
+        """Convert class index to name."""
+        cats = [
+            cat
+            for cat in self._coco.coco.dataset["categories"]
+            if cat["id"] == class_index - 1
+        ]
+        if len(cats) == 0:
+            return f"<unknown class {class_index}>"
+        else:
+            return " ".join([cat["name"] for cat in cats])

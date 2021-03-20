@@ -133,10 +133,6 @@ class YOLOLayer(nn.Module):
         nG = x.size(2)
         stride = self.image_dim / nG
 
-        # print(
-        #    f"MDW: YoloLayer.forward: x.size is {x.size()}, nA {nA} nB {nB} nG {nG} stride {stride}"
-        # )
-
         # Tensors for cuda support
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
         LongTensor = torch.cuda.LongTensor if x.is_cuda else torch.LongTensor
@@ -145,8 +141,6 @@ class YOLOLayer(nn.Module):
         prediction = (
             x.view(nB, nA, self.bbox_attrs, nG, nG).permute(0, 1, 3, 4, 2).contiguous()
         )
-
-        # print(f"MDW: prediction.size() is {prediction.size()}")
 
         # Get outputs
         x = torch.sigmoid(prediction[..., 0])  # Center x
@@ -232,49 +226,42 @@ class YOLOLayer(nn.Module):
                 pred_conf[conf_mask_false], tconf[conf_mask_false]
             ) + self.bce_loss(pred_conf[conf_mask_true], tconf[conf_mask_true])
 
-            print(f"MDW: tcls is: {tcls}")
-            print(f"MDW: tcls[mask] is: {tcls[mask]}")
+            if tcls[mask].shape[0] == 0:
+                # No ground-truth bounding boxess matching this mask.
+                loss_cls = torch.Tensor((0.0,)).cpu()
+                if x.is_cuda:
+                    loss_cls = loss_cls.cuda()
+            else:
+                loss_cls = (1 / nB) * self.ce_loss(
+                    pred_cls[mask], torch.argmax(tcls[mask], 1)
+                )
 
-            loss_cls = (1 / nB) * self.ce_loss(
-                pred_cls[mask], torch.argmax(tcls[mask], 1)
-            )
             loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls
-
-        # Training
-        if self._training:
-
-            return (
-                loss,
-                loss_x.item(),
-                loss_y.item(),
-                loss_w.item(),
-                loss_h.item(),
-                loss_conf.item(),
-                loss_cls.item(),
-                recall,
-                precision,
-            )
-
+            print(f"MDW: loss in model is: {loss}")
+            losses = {
+                "loss": loss,
+                "x": loss_x.item(),
+                "y": loss_y.item(),
+                "w": loss_w.item(),
+                "h": loss_h.item(),
+                "conf": loss_conf.item(),
+                "cls": loss_cls.item(),
+                "recall": recall,
+                "precision": precision,
+            }
+            print(f"MDW: losses in model is: {losses}")
         else:
-            # If not in training phase return predictions
-            # XXX MDW Hacking
-            # return (pred_boxes, pred_conf, pred_cls)
+            losses = None
 
-            output = torch.cat(
-                (
-                    pred_boxes.view(nB, -1, 4) * stride,
-                    pred_conf.view(nB, -1, 1),
-                    pred_cls.view(nB, -1, self.num_classes),
-                ),
-                -1,
-            )
-
-            # foo = torch.split(output, [4, 1, 40], -1)
-            # print(f"MDW: split is: {len(foo)}, {foo[0].size()} {foo[1].size()} {foo[2].size()}")
-            # assert torch.all(torch.eq(foo[0].view(nB, 3, nG, nG, 4) / stride, pred_boxes))
-            # assert torch.all(torch.eq(foo[1].view(nB, 3, nG, nG), pred_conf))
-            # assert torch.all(torch.eq(foo[2].view(nB, 3, nG, nG, self.num_classes), pred_cls))
-            return output
+        predictions = torch.cat(
+            (
+                pred_boxes.view(nB, -1, 4) * stride,
+                pred_conf.view(nB, -1, 1),
+                pred_cls.view(nB, -1, self.num_classes),
+            ),
+            -1,
+        )
+        return predictions, losses
 
 
 class Darknet(nn.Module):
@@ -291,10 +278,10 @@ class Darknet(nn.Module):
         self._training = training
         self.seen = 0
         self._header_info = np.array([0, 0, 0, self.seen, 0])
-        self._loss_names = ["x", "y", "w", "h", "conf", "cls", "recall", "precision"]
 
     def forward(self, x: torch.Tensor, targets: Optional[List[torch.Tensor]] = None):
         output = []
+        raw_loss = []
         self.losses = defaultdict(float)
         layer_outputs = []
         for i, (module_def, module) in enumerate(
@@ -313,25 +300,23 @@ class Darknet(nn.Module):
                 layer_i = int(module_def["from"])
                 x = layer_outputs[-1] + layer_outputs[layer_i]
             elif module_def["type"] == "yolo":
-                # Train phase: get loss
-                if self._training:
-                    x, *losses = module[0](x, targets)
-                    for name, loss in zip(self._loss_names, losses):
-                        self.losses[name] += loss
-                # Test phase: Get detections
-                else:
-                    x = module[0](x, targets)
+                # The YOLO layer returns both predictions and the dict of losses.
+                x, losses = module[0](x, targets)
+                # Assumulate losses if the model returned them.
+                # We do this because with multiple YOLO layers in the model,
+                # we need to sum each loss value for each layer.
+                # (losses will be None if targets are None.)
+                if targets is not None:
+                    assert losses is not None
+                    for key, lossval in losses.items():
+                        self.losses[key] += lossval
                 output.append(x)
-            # print(f"MDW: Layer [{i}] output size: {x.size()}")
+                raw_loss.append(losses["loss"])
             layer_outputs.append(x)
 
         self.losses["recall"] /= 3
         self.losses["precision"] /= 3
-        # print(f"MDW: output is {output}")
-        if self._training:
-            return sum(output)
-        else:
-            return torch.cat(output, 1)
+        return (torch.cat(output, 1), sum(raw_loss))
 
     def load_weights(self, weights_path):
         """Parses and loads the weights stored in 'weights_path'"""
@@ -342,11 +327,16 @@ class Darknet(nn.Module):
                 fp, dtype=np.int32, count=5
             )  # First five are header values
 
+            print(f"MDW: header is: {header}")
+
             # Needed to write header when saving weights
             self._header_info = header
 
             self.seen = header[3]
+            print(f"MDW: self.seen is {self.seen}")
             weights = np.fromfile(fp, dtype=np.float32)  # The rest are weights
+            print(f"MDW: read weights: {weights.shape}")
+            print(f"MDW: weights: {weights}")
 
         ptr = 0
         for i, (module_def, module) in enumerate(
@@ -397,12 +387,14 @@ class Darknet(nn.Module):
                 )
                 conv_layer.weight.data.copy_(conv_w)
                 ptr += num_w
+        print(f"MDW: ptr is now: {ptr}")
 
     def save_weights(self, path, cutoff=-1):
         """
         @:param path    - path of the new weights file
         @:param cutoff  - save layers between 0 and cutoff (cutoff = -1 -> all are saved)
         """
+        print(f"Saving weights to {path}, seen is {self.seen}")
         with open(path, "wb") as fp:
             self._header_info[3] = self.seen
             self._header_info.tofile(fp)
@@ -413,17 +405,17 @@ class Darknet(nn.Module):
             ):
                 if module_def["type"] == "convolutional":
                     conv_layer = module[0]
-                    # If batch norm, load bn first
+                    # If batch norm, save bn first
                     if "batch_normalize" in module_def:
                         bn_layer = module[1]
                         bn_layer.bias.data.cpu().numpy().tofile(fp)
                         bn_layer.weight.data.cpu().numpy().tofile(fp)
                         bn_layer.running_mean.data.cpu().numpy().tofile(fp)
                         bn_layer.running_var.data.cpu().numpy().tofile(fp)
-                    # Load conv bias
+                    # Save conv bias
                     else:
                         conv_layer.bias.data.cpu().numpy().tofile(fp)
-                    # Load conv weights
+                    # Save conv weights
                     conv_layer.weight.data.cpu().numpy().tofile(fp)
 
         fp.close()
