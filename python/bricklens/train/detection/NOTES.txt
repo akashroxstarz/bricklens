@@ -432,6 +432,36 @@ means that prediction boxes with *higher confidence* scores but lower IoU agains
 boxes are not considered. 
 
 
+--------------------------
+[20 Mar 2021]
+
+I'm trying to use the yolov3 pretrained model against MSCOCO using pjreddie's model here:
+
+https://pjreddie.com/darknet/yolo/
+
+For some reason, this model (and other implementations I have found) have only
+80 categories for MSCOCO (both 2014 and 2017), but when I look at the annotations
+JSON file I see 90 classes. Maybe some of them aren't used?
+
+** Yes indeed! There are in fact only 80 classes.
+
+This may be a better YOLO3 reference implementation in PyTorch, also because there
+is a pretrained .pt file:
+
+https://github.com/ultralytics/yolov3
+
+There is a Kaggle notebook showing how to use it:
+
+https://www.kaggle.com/ultralytics/yolov3
+
+
+
+
+
+
+
+
+
 
 
 
