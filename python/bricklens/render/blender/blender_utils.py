@@ -59,3 +59,12 @@ def blender_render(blender_file: str, output_file: str):
         )
         os.rename(os.path.join(tmpdir, "img_0001.png"), output_file)
     print(f"Saved image to {output_file}")
+
+
+def render_ldr(ldr_file: str, output_file: str, template_file: str, ldraw_library_path: str):
+    """Render the given LDR file to the given output file."""
+    
+    with tempfile.NamedTemporaryFile(suffix=".blend") as blender_file:
+        ldr_to_blender(ldr_file, blender_file.name, template_file, ldraw_library_path)
+        blender_render(blender_file.name, output_file)
+
