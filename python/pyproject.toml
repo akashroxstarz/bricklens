@@ -21,6 +21,7 @@ PyYAML = "^5.3.1"
 scikit-image = "^0.18.1"
 Pympler = "^0.9"
 pycocotools = "^2.0.2"
+rich = "^10.4.0"
 
 
 [tool.poetry.dev-dependencies]
