@@ -181,16 +181,28 @@ class DatasetImage:
     def __init__(
         self,
         id: int,
+        image_width: int,
+        image_height: int,
         image_fname: str,
         annotations: List[Tuple[str, Tuple[int, int, int, int]]],
     ):
         self._id = id
+        self._width = image_width
+        self._height = image_height
         self._image_fname = image_fname
         self._annotations = annotations
 
     @property
     def id(self) -> int:
         return self._id
+
+    @property
+    def width(self) -> int:
+        return self._width
+
+    @property
+    def height(self) -> int:
+        return self._height
 
     @property
     def image_fname(self) -> str:
@@ -223,6 +235,7 @@ def gen_dataset_image(
     outdir: str,
     image_width: int,
     image_height: int,
+    classes: List[str],
 ) -> DatasetImage:
     """Generate a single image in the dataset."""
 
@@ -252,6 +265,10 @@ def gen_dataset_image(
             part = random.choice(foreground_parts)
             color = random.choice(foreground_colors)
             piece_name = f"{part}_{color.name}"
+            assert (
+                piece_name in classes
+            ), f"Output classe list does not contain piece name {piece_name}: {classes}"
+            classid = classes.index(piece_name)
 
             # Render it solo and get its bounding box. Note that this can fail
             # if the image is out of the field of view.
@@ -274,7 +291,7 @@ def gen_dataset_image(
                     f"[bold red]Warning: Unable to generate bbox for {piece_name} after 100 tries."
                 )
                 continue
-            annotations.append((piece_name, bbox))
+            annotations.append((str(classid), bbox))
             foreground_pieces.append(piece)
 
     with console.status("[green]Rendering..."):
@@ -282,7 +299,7 @@ def gen_dataset_image(
         render(pile + foreground_pieces, image_fname, image_width, image_height)
 
     console.log(f"[red]Done![/red] Wrote {image_fname}")
-    return DatasetImage(index, image_fname, annotations)
+    return DatasetImage(index, image_width, image_height, image_fname, annotations)
 
 
 def gen_category_map(all_images: List[DatasetImage]) -> Dict[str, int]:
@@ -343,8 +360,15 @@ def write_dataset(images: List[DatasetImage], outdir: str, outfile: str):
             with open(os.path.join(outdir, "labels", label_fname), "w") as labelfile:
                 for category, bbox in img.annotations:
                     left, upper, right, lower = bbox
+
+                    # Normalize bbox locations as required by Yolov3 code.
+                    left = (left * 1.0) / img.width
+                    upper = (upper * 1.0) / img.height
+                    right = (right * 1.0) / img.width
+                    lower = (lower * 1.0) / img.height
+
                     labelfile.write(
-                        f"{category} {left} {upper} {right - left} {lower - upper}\n"
+                        f"{category} {left} {upper} {right} {lower}\n"
                     )
 
 
@@ -466,7 +490,6 @@ def main():
         default=False,
         help="Skip rendering images and generating labels. If set, only write class file.",
     )
-
     parser.add_argument(
         "--num_images",
         help="Number of output images in the dataset.",
