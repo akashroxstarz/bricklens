@@ -446,6 +446,7 @@ def gen_dataset(args):
             args.outdir,
             args.width,
             args.height,
+            classes,
         )
         all_images.append(dsimage)
 
