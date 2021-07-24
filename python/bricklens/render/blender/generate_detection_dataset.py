@@ -367,8 +367,14 @@ def write_dataset(images: List[DatasetImage], outdir: str, outfile: str):
                     right = (right * 1.0) / img.width
                     lower = (lower * 1.0) / img.height
 
+                    # Yolov3 expects bbox coordinates in the form:
+                    #   center_x center_y box_width box_height
+                    box_width = right - left
+                    box_height = lower - upper
+                    center_x = left + (box_width / 2.0)
+                    center_y = upper + (box_height / 2.0)
                     labelfile.write(
-                        f"{category} {left} {upper} {right} {lower}\n"
+                        f"{category} {center_x} {center_y} {box_width} {box_height}\n"
                     )
 
 
