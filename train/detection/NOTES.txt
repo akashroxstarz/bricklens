@@ -1,0 +1,471 @@
+Current status:
+
+- Model loading and instantiation should work
+- Got training code up and running.
+- Generated dataset in the simple format.
+
+To do:
+
+- Map classes to integer values.
+- Make sure number of output classes matches number of classes in dataset.
+- Look at assumption of 416 x 416 images.
+- Consider starting from existing Yolo3 pretrained weights rather than training from scratch?
+- Look at anchor boxes - they are almost certainly not right.
+
+
+Notes on YOLO3 model code:
+
+The config file "yolov3.cfg" is from PJReddie's code here:
+
+https://github.com/pjreddie/darknet/blob/master/cfg/yolov3-voc.cfg
+
+The "VOC" variant takes 416x416 input images. It differs in terms of
+the image size used, number of classes (80 vs 20), and the "ignore_thresh"
+parameter (0.7 vs 0.5). So I think this is not that meaningful.
+
+Looks like the code I'm using (from pytorch_custom_yolo_training repo)
+has modified it to only support 3 models.
+
+The version I'm using has these changes:
+  - Batch size of 16 (vs 64 in the original yolov3-voc.cfg).
+  - LR of 0.002 (vs 0.001).
+  - Output classes = 3 (vs 20).
+
+Network looks like this:
+
+  conv2d 3x3, 32 channels, stride 1 + bn + leaky
+
+  conv2d 3x3, 64 channels, stride 2 + bn + leaky
+  conv2d 1x1, 32 channels, stride 1 + bn + leaky
+  conv2d 3x3, 64 channels, stride 1 + bn + leaky
+  shortcut from -3
+
+  conv2d 3x3, 128 channels, stride 2 + bn + leaky
+  conv2d 1x1, 64 channels, stride 1 + bn + leaky
+  conv2d 3x3, 128 channels, stride 1 + bn + leaky
+  shortcut from -3
+
+  conv2d 1x1, 64 channels, stride 1 + bn + leaky
+  conv2d 3x3, 128 channels, stride 1 + bn + leaky
+  shortcut from -3
+
+  conv2d 3x3, 256 channels, stride 2 + bn + leaky
+  conv2d 1x1, 128 channels, stride 1 + bn + leaky
+  conv2d 3x3, 256 channels, stride 1 + bn + leaky
+  shortcut from -3
+
+  conv2d 1x1, 128 channels, stride 1 + bn + leaky |
+  conv2d 3x3, 256 channels, stride 1 + bn + leaky |  x 7
+  shortcut from -3                                |
+
+  conv2d 3x3, 512 channels, stride 2 + bn + leaky
+  conv2d 1x1, 256 channels, stride 1 + bn + leaky
+  conv2d 3x3, 512 channels, stride 1 + bn + leaky
+  shortcut from -3
+  
+  conv2d 1x1, 256 channels, stride 1 + bn + leaky |
+  conv2d 3x3, 512 channels, stride 1 + bn + leaky |  x 7
+  shortcut from -3                                |
+
+  conv2d 3x3, 1024 channels, stride 2 + bn + leaky
+  conv2d 1x1, 512 channels, stride 1 + bn + leaky
+  conv2d 3x3, 1024 channels, stride 1 + bn + leaky
+  shortcut from -3
+  
+  conv2d 1x1, 512 channels, stride 1 + bn + leaky  |
+  conv2d 3x3, 1024 channels, stride 1 + bn + leaky |  x 3
+  shortcut from -3                                 |
+
+  #### YOLO output #1:
+
+  conv2d 1x1, 512 channels, stride 1 + bn + leaky  |
+  conv2d 3x3, 1024 channels, stride 1 + bn + leaky |  x 3
+
+  conv2d 1x1, 24 channels, no BN, linear
+
+  yolo (mask = 6, 7, 8) classes=3 num=9  - The "mask" seems to have to do with which anchors are used.
+    There are 9 anchor boxes in total, this is selecting the last 3 of them.
+
+  route from -4
+
+  conv2d 1x1, 256 channels, stride 1 + bn + leaky
+
+  upsample stride=2
+
+  route from layers -1 and 61 (???)
+
+  #### YOLO output #2:
+
+  conv2d 1x1, 256 channels, stride 1 + bn + leaky |
+  conv2d 3x3, 512 channels, stride 1 + bn + leaky |  x 3
+
+  conv2d 1x1, 24 channels, no BN, linear
+
+  yolo (mask = 3, 4, 5) classes=3 num=9
+
+  route from -4
+
+  conv2d 1x1, 128 channels, stride 1 + bn + leaky
+
+  upsample stride=2
+
+  route from layers -1 and 36  (???)
+
+  #### YOLO output #3:
+
+  conv2d 1x1, 128 channels, stride 1 + bn + leaky |
+  conv2d 3x3, 256 channels, stride 1 + bn + leaky |  x 3
+
+  conv2d 1x1, 24 channels, no BN, linear
+
+  yolo (mask = 0, 1, 2) classes=3 num=9
+
+
+Here is the YOLOv3 paper: https://arxiv.org/pdf/1804.02767.pdf
+Main ideas:
+  * For each cell there are 9 "dimension clusters" - this is from YOLOv2.
+  * Performs multiclass classification - no softmax.
+  * Boxes predicted at 3 different scales (this is the reason for the 3 YOLO layers).
+    * Predict 3 boxes at each scale. This is why there are three entries in the "masks" field.
+  * Bounding box priors based on k-means clustering from the COCO dataset.
+  * The classifier network itself (without the YOLO layers) is what is called "DarkNet-53".
+
+Implementation notes:
+  - Shortcut layer adds the previous layer to the output of the referenced layer.
+  - Route layer seems to just emit the output of the referenced layers.
+  - There is a LOT of complexity in the YOLO layer code. Need to dig in and understand
+    this better.
+
+----
+Getting error with mismatch in shape from the linear-activation conv2d input to Yolo layer.
+
+In the sample code I see the conv2d layer has 24 channels for 3 classes and 9 boxes
+In the yolov2-voc.cfg there are 75 channels for 20 classes and 9 boxes
+In the yolov2-tiny.cfg there are 255 channels for 80 classes and 6 boxes
+In the yolov2-spp.cfg there are 255 channels for 80 classes and 9 boxes
+In the yolov2-openimages.cfg there are 1818 channels for 601 classes and 9 boxes
+In the yolov2.cfg there are 255 channels for 80 classes and 9 boxes
+
+Seems to be the number is (# classes * 3) + 15.
+Not sure where the 15 comes from.
+For my 40-class model it would be 135.
+
+---
+
+Interpreting model outputs:
+
+We have 40 classes.
+
+Yolo Layer 1 takes as input a tensor of size [1, 135, 13, 13] and produces a tensor of [1, 507, 45]
+
+The 135 is (40 * 3) + 15.
+
+nA = 3 (number of bounding boxes)
+nB = 1 (number of images in batch)
+nG = 13 (number of grid cells)
+stride = 32 (which is 416 / 13, i.e., size of each grid cell in pixels)
+
+The input is permuted into a tensor of size [1, 3, 13, 13, 45]
+
+So there are 3 bbox predictions for each of the 13x13 grid cells.
+The 45 values for each prediction are:
+  x (sigmoid applied)
+  y (sigmoid applied)
+  w
+  h
+  prediction confidence ("objectness score")
+  class pred (one value per class, 40 classes)
+
+These get reshapes into `pred_boxes`, `pred_conf`, and `pred_cls` with sizes:
+
+pred_boxes size is torch.Size([1, 3, 13, 13, 4])
+  - x, y, w, h for each box
+
+pred_conf size is torch.Size([1, 3, 13, 13])
+  - confidence for each box
+
+pred_cls size is torch.Size([1, 3, 13, 13, 40])
+  - per-class class probability for each box
+
+All of these get squashed into a single output tensor like so:
+
+   output = torch.cat(
+                (
+                    pred_boxes.view(nB, -1, 4) * stride,
+                    pred_conf.view(nB, -1, 1),
+                    pred_cls.view(nB, -1, self.num_classes),
+                ),
+                -1,
+            )
+
+To use the predictions in my own code I need to un-squash these tensors.
+
+The squashing does this:
+
+MDW: pred_boxes is now torch.Size([1, 507, 4])
+MDW: pred_conf is now torch.Size([1, 507, 1])
+MDW: pred_cls is now torch.Size([1, 507, 40])
+
+WHich results in a tensor of [1, 507, 45] when they are concatenated.
+
+This code can be used to reverse the concatenation for a single YOLO layer:
+
+  foo = torch.split(output, [4, 1, 40], -1)
+  assert torch.all(torch.eq(foo[0].view(nB, 3, nG, nG, 4) / stride, pred_boxes))
+  assert torch.all(torch.eq(foo[1].view(nB, 3, nG, nG), pred_conf))
+  assert torch.all(torch.eq(foo[2].view(nB, 3, nG, nG, self.num_classes), pred_cls))
+
+---
+
+How do we interpret the bounding box coords produced by the model?
+
+Bounding boxes read by the dataset code convert from
+  x y w h
+in pixels to
+
+  cx cy sw sh
+
+where (cx, cy) is the center of the bounding box, scaled to the (padded) width and height of the
+image -- e.g., between 0.0 and 1.0. sw and sh are scaled to the (padded) size of the image as well.
+
+The input images are 512x512 but are resized to 416x416 in the dataset code.
+
+What is coming out "raw" from the model is (x, y, w, h) with respect to the (fixed) anchor boxes.
+The model code seems to scale these back to pixels before spitting them out, I think?
+But did they get scaled to (416x416) not (512x512)?
+
+*** Need to look at the 'build_targets' code which does the matching between predicted and target
+boxes, to see how it does that scaling and comparison.
+
+For the first YOLO layer, we have 3 anchor boxe sizes (these are width/height):
+  [116, 90], [156, 198], [373, 326]
+
+(I don't quite follow why the first layer only considers these three)
+
+In YOLOLayer.forward(), these are scaled by 'stride', which is 32 pixels (for the 13x13 grid size).
+Why?
+  - This would seem to map the anchor box size to a grid cell
+  - However, that is not my understanding of how we should interpret the anchor box sizes!
+
+The model's prediction is shapeed [1, 3, 13, 13, 45], which is:
+  For each of the 13x13 grid cells
+    - 3 bounding boxes
+      - Each of which has 45 parameters
+        - x, y, w, h, objectness
+        - plus 40 class probabilities
+
+The raw x, y, w, h coming from the model are interpreted as:
+
+  x = torch.sigmoid(raw_x) + grid_x
+  y = torch.sigmoid(raw_y) + grid_y
+  w = torch.exp(raw_w) * scaled_anchor_w
+  h = torch.exp(raw_h) * scaled_anchor_h
+
+So we are now operating in "grid coordinates", ranging from 0 ... 12 (for example)
+Each of the 13x13 grid cells is predicting 3 bounding boxes, whose centers
+might lie *outside* that particular grid cell (based on the application of the
+sigmoid function to the x and y coordinates).
+
+By scaling the anchor box sizes to "grid cell units", that means that the
+final 'w' and 'h' values are in terms of some number of grid cells, e.g.,
+a 300 pixel wide anchor box on a 416x416 image base with 13x13 cells would
+end up spanning (300 / 32) = 9.37 grid cells.
+
+OK, so the final pred_bboxes passed to build_targets are the *center* of the
+bbox in *grid cell units*, not pixels and not image units. Okay.
+
+Let's see if this makes any sense.
+
+Generating smaller dataset for quick test runs, with only one piece in each image:
+
+poetry run bricklens/render/generate_detection_dataset.py --outdir detection_simple_100 --num_images 100 --width 416 --height 416 --num_parts 1 --background_parts 0 --num_colors 30 --detections_size 1 --pile_size 0 --overwrite
+
+(This is a hacked version of generate_detection_dataset which restrict itself to Brick2X4 pieces in
+the White color.)
+
+Training command line:
+
+poetry run bricklens/train/detection/train.py \
+  --epochs 100 \
+  --batch_size 1 \
+  --model_config_path bricklens/train/detection/config/yolov3.yml \
+  --dataset_config_path bricklens/train/detection/config/dataset_detection_simple_100.yml \
+  --checkpoint_dir checkpoints_simple_100
+
+Eval command line:
+
+poetry run bricklens/train/detection/eval.py \
+  --weights_path checkpoints_simple_100/checkpoint_99.weights \
+  --dataset_config_path bricklens/train/detection/config/dataset_detection_simple_100.yml \
+  --obj_threshold 0.02
+
+
+Details on how to use the model for inference here:
+
+https://towardsdatascience.com/object-detection-and-tracking-in-pytorch-b3cf1a696a98
+
+The author's code seems to be based on an earlier PyTorch impl of YOLOv3:
+
+https://github.com/eriklindernoren/PyTorch-YOLOv3/blob/master/detect.py
+
+which takes the raw detections from the model and converts them to (upper left, lower right)
+coordinates and then runs NMS on the result.
+
+This simply does:
+
+  def xywh2xyxy(x):
+    y = x.new(x.shape)
+    y[..., 0] = x[..., 0] - x[..., 2] / 2
+    y[..., 1] = x[..., 1] - x[..., 3] / 2
+    y[..., 2] = x[..., 0] + x[..., 2] / 2
+    y[..., 3] = x[..., 1] + x[..., 3] / 2
+    return y
+
+(Basically, x[0] and x[1] are the center x and y of the box, x[2] and x[3] are the
+box height and width, respectively.)
+
+
+And later, the boxes are scaled to image pixel coordinates using:
+
+  def rescale_boxes(boxes, current_dim, original_shape):
+    """ Rescales bounding boxes to the original shape """
+    orig_h, orig_w = original_shape
+    # The amount of padding that was added
+    pad_x = max(orig_h - orig_w, 0) * (current_dim / max(original_shape))
+    pad_y = max(orig_w - orig_h, 0) * (current_dim / max(original_shape))
+    # Image height and width after padding is removed
+    unpad_h = current_dim - pad_y
+    unpad_w = current_dim - pad_x
+    # Rescale bounding boxes to dimension of original image
+    boxes[:, 0] = ((boxes[:, 0] - pad_x // 2) / unpad_w) * orig_w
+    boxes[:, 1] = ((boxes[:, 1] - pad_y // 2) / unpad_h) * orig_h
+    boxes[:, 2] = ((boxes[:, 2] - pad_x // 2) / unpad_w) * orig_w
+    boxes[:, 3] = ((boxes[:, 3] - pad_y // 2) / unpad_h) * orig_h
+    return boxes
+
+Let's dig into what build_targets is doing.
+
+The original anchors for the 13x13 YOLO layer are:
+
+  [116, 90], [156, 198], [373, 326]
+
+The anchors passed into build_targets are:
+
+tensor([[ 3.6250,  2.8125], [ 4.8750,  6.1875], [11.6562, 10.1875]])
+
+Which are just the pixel width and height of each of the anchor boxes
+divided by 32 (the size of a single grid cell in 13x13 with a 416x416px image).
+In other words, these are in grid-cell.
+
+
+The raw ground-truth bounding box for image_00000.png is:
+
+3001_White 197 12 19 28
+
+And what is passed into build_targets is:
+
+tensor([0.0000, 0.4964, 0.0625, 0.0457, 0.0673])
+
+Which should be the center point of the box, scaled to 0.0-1.0.
+An indeed it is.
+
+0.4964 = (197 + (19/2)) / 416
+0.0625 = (12 + (28/2)) / 416
+0.0457 = 19 / 416
+0.0673 = 28 / 416
+
+For the ground truth box, the coordinates are scaled up
+into "grid cell" coordinates by multiplying by nG, the number
+of grid cells:
+
+gx = 13 * 0.4964 = 6.453
+gy = 13 * 0.0625 = 0.8125
+...
+
+Then the IoU is calculated between this ground truth box
+and each anchor box (in grid cell coordinates).
+
+For this we get:
+
+MDW: anch_ious is: tensor([0.1695, 0.0708, 0.0211])
+
+For some reason, anchor boxes with an IoU of > 0.5 with a ground truth box
+have the "conf_mask" set to 0, to ignore them down the line -- I am not sure why.
+
+The anchor box with the highest IoU is selected.
+
+The corresponding prediction -- that is, the prediction corresponding to the
+best-IoU anchor box for the grid cell *in which the ground truth box lies* (!!!)
+is chosen as "pred_box".
+
+** TO DO:
+
+- The above is used to calculate losses, but does not take NMS into account. So all bounding
+  boxes are potentially contributing to the loss, I think.
+
+- Look at pred_box. This should be the same as the prediction we are getting out of the model.
+  IoU with the GT box is being calculated as: 
+
+            iou = bbox_iou(gt_box, pred_box, x1y1x2y2=False)
+
+  ** Note the 'x1y1x2y2 = False' which means the coordinate system is different.
+  This is probably the key to understanding how to interpret the predictions coming out of
+  the model.
+
+So ... the conversion from raw prediction to grid coordinates is:
+
+ x1, x2 = box[0] - box[2] / 2, box[0] + box[2] / 2
+ y1, y2 = box[1] - box[3] / 2, box[1] + box[3] / 2
+
+(Note that this sometimes creates boxes that go off the edge of the image, but that's
+the nature of the beast.)
+
+To convert to pixels, we need to multiply by 'stride' which is 32 (in the case of the 13x13 grid)
+
+All right... this seems to "work".
+
+However, now we need to take NMS and so forth into account.
+
+build_targets() is doing some funny stuff where it only considers the prediction box
+with the highest IoU against a ground-truth box when calculating the loss. Note that this
+means that prediction boxes with *higher confidence* scores but lower IoU against GT
+boxes are not considered. 
+
+
+--------------------------
+[20 Mar 2021]
+
+I'm trying to use the yolov3 pretrained model against MSCOCO using pjreddie's model here:
+
+https://pjreddie.com/darknet/yolo/
+
+For some reason, this model (and other implementations I have found) have only
+80 categories for MSCOCO (both 2014 and 2017), but when I look at the annotations
+JSON file I see 90 classes. Maybe some of them aren't used?
+
+** Yes indeed! There are in fact only 80 classes.
+
+This may be a better YOLO3 reference implementation in PyTorch, also because there
+is a pretrained .pt file:
+
+https://github.com/ultralytics/yolov3
+
+There is a Kaggle notebook showing how to use it:
+
+https://www.kaggle.com/ultralytics/yolov3
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,6 +1,6 @@
 [submodule "python/yolov3"]
-	path = python/yolov3
+	path = train/yolov3
 	url = git@github.com:mdwelsh/yolov3.git
 [submodule "python/custom-images"]
-	path = python/custom-images
+	path = render/spark/custom-images
 	url = https://github.com/GoogleCloudDataproc/custom-images
