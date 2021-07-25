@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "bricklens"
+name = "bricklens-train"
 version = "0.1.0"
 description = ""
 authors = ["Matt Welsh <mdw@mdw.la>"]
@@ -10,8 +10,6 @@ numpy = "^1.19.2"
 pandas = "^1.1.5"
 Pillow = "^7.2.0"
 progress = "^1.5"
-# pyldraw = { git = "https://github.com/mdwelsh/python-ldraw", branch = "master" }
-pyldraw = { path = "../../python-ldraw/", develop = false }
 pytorch-ignite = "^0.4.2"
 tensorboard = "^2.4.0"
 torch = "^1.7.1"
@@ -21,8 +19,6 @@ PyYAML = "^5.3.1"
 scikit-image = "^0.18.1"
 Pympler = "^0.9"
 pycocotools = "^2.0.2"
-rich = "^10.4.0"
-
 
 [tool.poetry.dev-dependencies]
 pytest = "^3.4"
