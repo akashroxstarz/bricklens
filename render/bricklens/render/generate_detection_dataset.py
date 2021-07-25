@@ -22,11 +22,14 @@ from PIL import Image, ImageDraw
 from rich.console import Console
 import rich.progress
 
-import render.blender_utils as blender_utils
+import bricklens.render.blender_utils as blender_utils
 
-LDRAW_LIBRARY_PATH = "/home/mdw/src/downloads/ldraw"
-TEMPLATE_FILE_WITH_BACKGROUND = "data/emptyscene.blend"
-TEMPLATE_FILE_NO_BACKGROUND = "data/emptybackground.blend"
+TEMPLATE_FILE_WITH_BACKGROUND = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "data", "emptyscene.blend")
+)
+TEMPLATE_FILE_NO_BACKGROUND = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "data", "emptybackground.blend")
+)
 
 console = Console()
 
@@ -140,6 +143,7 @@ def run_pov(pov_path, image_path, image_width, image_height):
 def render(
     pieces: List[Piece],
     image_path: str,
+    ldraw_library_path: str,
     width: int,
     height: int,
     single_piece: bool = False,
@@ -157,19 +161,26 @@ def render(
         ldr_file=ldr.name,
         output_file=image_path,
         template_file=template_file,
-        ldraw_library_path=LDRAW_LIBRARY_PATH,
+        ldraw_library_path=ldraw_library_path,
     )
 
     os.remove(ldr.name)
 
 
 def get_bounding_box(
-    piece: Piece, image_width: int, image_height: int
+    piece: Piece, image_width: int, image_height: int, ldraw_library_path: str
 ) -> Optional[Tuple[int, int, int, int]]:
     """Return the bounding box of the given piece in a scene."""
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".png") as tmpimg:
         tmpimg.close()
-        render([piece], tmpimg.name, image_width, image_height, single_piece=True)
+        render(
+            [piece],
+            tmpimg.name,
+            ldraw_library_path,
+            image_width,
+            image_height,
+            single_piece=True,
+        )
         img = Image.open(tmpimg.name)
         # This is in format left, upper, right, lower.
         bbox = img.getbbox()
@@ -236,6 +247,7 @@ def gen_dataset_image(
     image_width: int,
     image_height: int,
     classes: List[str],
+    ldraw_library_path: str,
 ) -> DatasetImage:
     """Generate a single image in the dataset."""
 
@@ -284,7 +296,9 @@ def gen_dataset_image(
                     y_range=(-100, 0),
                     z_range=(-300, 300),
                 )
-                bbox = get_bounding_box(piece, image_width, image_height)
+                bbox = get_bounding_box(
+                    piece, image_width, image_height, ldraw_library_path
+                )
                 tries += 1
             if tries == 100:
                 console.log(
@@ -296,7 +310,13 @@ def gen_dataset_image(
 
     with console.status("[green]Rendering..."):
         pile = gen_pile(background_parts, background_colors, pile_size)
-        render(pile + foreground_pieces, image_fname, image_width, image_height)
+        render(
+            pile + foreground_pieces,
+            image_fname,
+            ldraw_library_path,
+            image_width,
+            image_height,
+        )
 
     console.log(f"[red]Done![/red] Wrote {image_fname}")
     return DatasetImage(index, image_width, image_height, image_fname, annotations)
@@ -453,6 +473,7 @@ def gen_dataset(args):
             args.width,
             args.height,
             classes,
+            args.ldraw_library_path,
         )
         all_images.append(dsimage)
 
@@ -562,6 +583,11 @@ def main():
         action="store_true",
         default=False,
         help="Overwrite existing --outdir if it exists.",
+    )
+    parser.add_argument(
+        "--ldraw_library_path",
+        help="Path to LDRAW library",
+        required=True,
     )
 
     args = parser.parse_args()
