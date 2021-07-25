@@ -1,6 +1,6 @@
 #!/bin/sh
 
-poetry run bricklens/render/blender/generate_detection_dataset.py \
+poetry run render/generate_detection_dataset.py \
   --outdir $HOME/datasets/bricklens_1000 \
   --num_images 1000 \
   --width 512 \

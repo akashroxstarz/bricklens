@@ -22,11 +22,11 @@ from PIL import Image, ImageDraw
 from rich.console import Console
 import rich.progress
 
-import bricklens.render.blender.blender_utils as blender_utils
+import render.blender_utils as blender_utils
 
 LDRAW_LIBRARY_PATH = "/home/mdw/src/downloads/ldraw"
-TEMPLATE_FILE_WITH_BACKGROUND = "bricklens/render/data/emptyscene.blend"
-TEMPLATE_FILE_NO_BACKGROUND = "bricklens/render/data/emptybackground.blend"
+TEMPLATE_FILE_WITH_BACKGROUND = "data/emptyscene.blend"
+TEMPLATE_FILE_NO_BACKGROUND = "data/emptybackground.blend"
 
 console = Console()
 
