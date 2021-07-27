@@ -6,7 +6,7 @@ set -eux
 
 # Install APT dependencies.
 apt-get -y update && \
-  apt-get install python3-dev blender
+  apt-get -y install python3-dev blender
 
 # Install poetry.
 curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -

@@ -1,0 +1,18 @@
+FROM ubuntu:20.04
+
+# Install APT dependencies.
+RUN apt -y update && \
+    DEBIAN_FRONTEND="noninteractive" apt-get -y install tzdata && \
+    apt -y install unzip curl git vim python3.8-minimal python3.8-dev python3-pip blender
+
+# Install Bricklens wheel.
+COPY dist/bricklens_render-0.1.0-py3-none-any.whl .
+RUN pip3 install bricklens_render-0.1.0-py3-none-any.whl
+
+# TODO(mdw): Figure out how to install this from the commandline.
+# RUN curl -O https://github.com/TobyLobster/ImportLDraw/releases/download/1.1.11/importldraw1.1.11_for_blender_281.zip
+
+# Download LDRAW library.
+RUN curl -O https://www.ldraw.org/library/updates/complete.zip && unzip complete.zip
+
+CMD python3 -m bricklens.render.generate_detection_dataset --help
