@@ -1,16 +1,44 @@
-FROM ubuntu:20.04
+# See: https://github.com/Vogete/blender-cuda-docker 
+# Test with: docker run --gpus all -it gcr.io/bricklens/render:latest /bin/bash
+FROM nvidia/cuda:11.3.0-devel-ubuntu20.04
 
-# Install APT dependencies.
-RUN apt -y update && \
+ENV BLENDER_MAJOR 2.92
+ENV BLENDER_VERSION 2.92.0
+ENV BLENDER_TAR_URL https://download.blender.org/release/Blender${BLENDER_MAJOR}/blender-${BLENDER_VERSION}-linux64.tar.xz
+
+RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get -y install tzdata && \
-    apt -y install unzip curl git vim python3.8-minimal python3.8-dev python3-pip blender
+	apt-get install -y \
+        bzip2 \
+		curl \
+        git \
+        libfreetype6 \
+        libgl1-mesa-dev \
+		libglu1-mesa \
+		libxi6 \
+        libxrender1 \
+        python3.8-minimal \
+        python3.8-dev \
+        python3-pip \
+        unzip \
+        vim \
+        wget \
+	&& apt-get -y autoremove
+
+# Install blender.
+RUN mkdir /usr/local/blender && \
+	wget --quiet ${BLENDER_TAR_URL} -O blender.tar.xz && \
+	tar -xvf blender.tar.xz -C /usr/local/blender --strip-components=1 && \
+	rm blender.tar.xz
 
 # Install Bricklens wheel.
 COPY dist/bricklens_render-0.1.0-py3-none-any.whl .
 RUN pip3 install bricklens_render-0.1.0-py3-none-any.whl
 
-# TODO(mdw): Figure out how to install this from the commandline.
-# RUN curl -O https://github.com/TobyLobster/ImportLDraw/releases/download/1.1.11/importldraw1.1.11_for_blender_281.zip
+# Install LDraw Importer addon for Blender.
+RUN curl -O -L https://github.com/TobyLobster/ImportLDraw/releases/download/1.1.11/importldraw1.1.11_for_blender_281.zip && \
+  cd /usr/local/blender/2.92/scripts/addons && \
+  unzip /importldraw1.1.11_for_blender_281.zip
 
 # Download LDRAW library.
 RUN curl -O https://www.ldraw.org/library/updates/complete.zip && unzip complete.zip
