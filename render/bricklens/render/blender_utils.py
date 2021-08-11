@@ -63,10 +63,7 @@ def blender_render(blender_file: str, output_file: str):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        #os.rename(os.path.join(tmpdir, "img_0001.png"), output_file)
-        os.system(f"ls -lR {tmpdir}")
-        #shutil.copyfile(os.path.join(tmpdir, "img_0001.png"), output_file)
-
+        os.rename(os.path.join(tmpdir, "img_0001.png"), output_file)
 
 def render_ldr(
     ldr_file: str, output_file: str, template_file: str, ldraw_library_path: str

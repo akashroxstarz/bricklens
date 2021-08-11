@@ -40,10 +40,20 @@ RUN curl -O -L https://github.com/TobyLobster/ImportLDraw/releases/download/1.1.
   cd /usr/local/blender/2.92/scripts/addons && \
   unzip /importldraw1.1.11_for_blender_281.zip
 
+# Install blender userpref file to pick up LDraw Importer addon.
+COPY docker/userpref.blend \
+  /root/.config/blender/2.92/config/userpref.blend
+
 # Download LDRAW library.
 RUN curl -O https://www.ldraw.org/library/updates/complete.zip && unzip complete.zip
 
+# Force download of LDRAW ZIP on first import.
+RUN python3 -m bricklens.render.generate_detection_dataset --help
+
 ENV PATH="/usr/local/blender:${PATH}"
 
-# CMD python3 -m bricklens.render.generate_detection_dataset --help
-CMD python3 -m bricklens.render.generate_detection_dataset --outdir /foo --overwrite --num_images 2 --ldraw_library_path /ldraw
+CMD python3 -m bricklens.render.generate_detection_dataset \
+  --ldraw_library_path /ldraw \
+  --outdir /dataset \
+  --overwrite \
+  --num_images 2
