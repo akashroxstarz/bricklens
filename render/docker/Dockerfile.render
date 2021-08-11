@@ -43,4 +43,7 @@ RUN curl -O -L https://github.com/TobyLobster/ImportLDraw/releases/download/1.1.
 # Download LDRAW library.
 RUN curl -O https://www.ldraw.org/library/updates/complete.zip && unzip complete.zip
 
-CMD python3 -m bricklens.render.generate_detection_dataset --help
+ENV PATH="/usr/local/blender:${PATH}"
+
+# CMD python3 -m bricklens.render.generate_detection_dataset --help
+CMD python3 -m bricklens.render.generate_detection_dataset --outdir /foo --overwrite --num_images 2 --ldraw_library_path /ldraw
