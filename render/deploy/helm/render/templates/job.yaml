@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bricklens-render
+spec:
+  parallelism: 1
+  backoffLimit: 4
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 120
+      containers:
+        - image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          command: ["./render.sh"]
+          args:
+          {{- range $i, $item := .Values.render.argsList }}
+            {{- range $key, $value := index $.Values.render.args $item }}
+              {{- if eq (printf "%T" $value) "bool" -}}
+                {{- if $value }}
+            - "--{{ $key }}"
+                {{- end }}
+              {{- else }}
+            - "--{{ $key }}={{ $value }}"
+              {{- end }}
+            {{- end }}
+          {{- end }}

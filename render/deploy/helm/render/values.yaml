@@ -1,0 +1,18 @@
+image:
+  repository: gcr.io/bricklens/render
+  tag: latest
+  pullPolicy: IfNotPresent
+
+octomizer:
+  env: dev
+
+imagePullSecrets:
+  - name: gcr-image-pull-token
+
+resources:
+  requests:
+    cpu: "4"
+    memory: "8Gi"
+  limits:
+    cpu: "4"
+    memory: "32Gi"

@@ -2,10 +2,8 @@
 # Test with: docker run --gpus all -it gcr.io/bricklens/render:latest /bin/bash
 FROM nvidia/cuda:11.3.0-devel-ubuntu20.04
 
-ENV BLENDER_MAJOR 2.92
-ENV BLENDER_VERSION 2.92.0
-ENV BLENDER_TAR_URL https://download.blender.org/release/Blender${BLENDER_MAJOR}/blender-${BLENDER_VERSION}-linux64.tar.xz
 
+# Install basic dependencies.
 RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get -y install tzdata && \
 	apt-get install -y \
@@ -25,10 +23,26 @@ RUN apt-get update && \
         wget \
 	&& apt-get -y autoremove
 
+# Install Google Cloud SDK.
+RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" | \
+  tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
+  curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
+  apt-key --keyring /usr/share/keyrings/cloud.google.gpg  add - && \
+  apt-get update -y && apt-get install google-cloud-sdk -y
+
+COPY deploy/docker/secrets/bricklens-5adda0e3123a.json .
+RUN gcloud auth activate-service-account \
+  bricklens-gcs-access@bricklens.iam.gserviceaccount.com \
+  --project=bricklens \
+  --key-file=bricklens-5adda0e3123a.json
+
 # Install blender.
+ENV BLENDER_MAJOR 2.92
+ENV BLENDER_VERSION 2.92.0
+ENV BLENDER_TAR_URL https://download.blender.org/release/Blender${BLENDER_MAJOR}/blender-${BLENDER_VERSION}-linux64.tar.xz
 RUN mkdir /usr/local/blender && \
 	wget --quiet ${BLENDER_TAR_URL} -O blender.tar.xz && \
-	tar -xvf blender.tar.xz -C /usr/local/blender --strip-components=1 && \
+	tar -xf blender.tar.xz -C /usr/local/blender --strip-components=1 && \
 	rm blender.tar.xz
 
 # Install Bricklens wheel.
@@ -41,7 +55,7 @@ RUN curl -O -L https://github.com/TobyLobster/ImportLDraw/releases/download/1.1.
   unzip /importldraw1.1.11_for_blender_281.zip
 
 # Install blender userpref file to pick up LDraw Importer addon.
-COPY docker/userpref.blend \
+COPY deploy/docker/userpref.blend \
   /root/.config/blender/2.92/config/userpref.blend
 
 # Download LDRAW library.
@@ -52,8 +66,6 @@ RUN python3 -m bricklens.render.generate_detection_dataset --help
 
 ENV PATH="/usr/local/blender:${PATH}"
 
-CMD python3 -m bricklens.render.generate_detection_dataset \
-  --ldraw_library_path /ldraw \
-  --outdir /dataset \
-  --overwrite \
-  --num_images 2
+COPY deploy/render.sh .
+CMD render.sh
+
