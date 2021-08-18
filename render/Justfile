@@ -4,9 +4,9 @@ install:
 build: install
   poetry build
 
-build-docker:
-  docker build -t gcr.io/bricklens/render -f deploy/docker/Dockerfile.render .
+build-docker: build
+  docker build -t gcr.io/bricklens/render:latest -f deploy/docker/Dockerfile.render .
 
-push-docker: build-docker
-  docker push -t gcr.io/bricklens/render
+push-docker:
+  docker push gcr.io/bricklens/render:latest
 

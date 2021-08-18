@@ -14,14 +14,15 @@ fi
 # Create GCR pull secret.
 if ! kubectl get secret gcr-deploy-token --namespace="$KUBE_NAMESPACE"; then
     kubectl create secret docker-registry gcr-deploy-token \
+        --namespace="$KUBE_NAMESPACE" \
         --docker-server=gcr.io \
         --docker-username=_json_key \
         --docker-password="$(cat secrets/bricklens-c7eddf45242c.json)" \
         --docker-email=any@valid.email
 fi
 
-#helm dependency update deploy/helm/render
-#helm upgrade --install bricklens-render --namespace "$KUBE_NAMESPACE" ./deploy/helm/render \
-#    --timeout 15m0s --wait --atomic --debug --alsologtostderr
+helm dependency update helm/render
+helm upgrade --install bricklens-render --namespace "$KUBE_NAMESPACE" ./helm/render \
+    --timeout 15m0s --wait --atomic --debug --alsologtostderr
 
 echo "Deployed namespace ${KUBE_NAMESPACE}."

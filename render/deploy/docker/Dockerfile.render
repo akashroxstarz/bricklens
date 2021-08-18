@@ -30,7 +30,7 @@ RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.c
   apt-key --keyring /usr/share/keyrings/cloud.google.gpg  add - && \
   apt-get update -y && apt-get install google-cloud-sdk -y
 
-COPY deploy/docker/secrets/bricklens-5adda0e3123a.json .
+COPY deploy/secrets/bricklens-5adda0e3123a.json .
 RUN gcloud auth activate-service-account \
   bricklens-gcs-access@bricklens.iam.gserviceaccount.com \
   --project=bricklens \
