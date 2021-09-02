@@ -3,7 +3,7 @@ kind: Job
 metadata:
   name: bricklens-render
 spec:
-  parallelism: 1
+  parallelism: {{ .Values.parallelism }}
   backoffLimit: 4
   template:
     metadata:

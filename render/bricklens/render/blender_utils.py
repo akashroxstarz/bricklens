@@ -56,9 +56,8 @@ def blender_render(blender_file: str, output_file: str):
                 f"{tmpdir}/img_",
                 "-f",
                 "1",
-                "--",
-                "--cycles-device",
-                "CUDA",
+                # Uncomment the following to use CUDA.
+                #"--", "--cycles-device", "CUDA",
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

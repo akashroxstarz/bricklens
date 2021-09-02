@@ -1,7 +1,9 @@
 #!/bin/sh
 
-# I should probably use Terraform for this.
+# This script creates an autopilot GKE cluster.
 
+# Be sure to 'gcloud auth login' first.
+gcloud config configurations activate bricklens
 gcloud config set project bricklens
 gcloud config set compute/zone us-west1-a
 gcloud config set compute/region us-west1
@@ -20,3 +22,4 @@ gcloud beta container \
   --services-ipv4-cidr "/22"
 
 gcloud container clusters get-credentials bricklens-cluster --region us-west1
+kubectl config use-context gke_bricklens_us-west1_bricklens-cluster

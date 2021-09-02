@@ -1,6 +1,12 @@
 #!/bin/bash
 
+# This script deploys the renderer Helm chart to the current cluster.
+
 set -eux
+
+# Be sure we are in the right context.
+gcloud config configurations activate bricklens
+kubectl config use-context gke_bricklens_us-west1_bricklens-cluster
 
 # Create namespace.
 export KUBE_NAMESPACE="bricklens-render"
@@ -9,7 +15,6 @@ if ! kubectl get namespace "$KUBE_NAMESPACE"; then
     echo "Creating namespace: $KUBE_NAMESPACE"
     kubectl create namespace "$KUBE_NAMESPACE"
 fi
-
 
 # Create GCR pull secret.
 if ! kubectl get secret gcr-deploy-token --namespace="$KUBE_NAMESPACE"; then

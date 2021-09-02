@@ -3,11 +3,10 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
-octomizer:
-  env: dev
-
 imagePullSecrets:
   - name: gcr-image-pull-token
+
+parallelism: 1
 
 resources:
   requests:
