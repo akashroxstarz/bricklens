@@ -6,7 +6,7 @@ image:
 imagePullSecrets:
   - name: gcr-image-pull-token
 
-parallelism: 1
+parallelism: 2
 
 resources:
   requests:

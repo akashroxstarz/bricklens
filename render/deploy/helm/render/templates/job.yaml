@@ -4,6 +4,7 @@ metadata:
   name: bricklens-render
 spec:
   parallelism: {{ .Values.parallelism }}
+  completions: {{ .Values.parallelism }}
   backoffLimit: 4
   template:
     metadata:
@@ -24,3 +25,10 @@ spec:
           command: ["./render.sh"]
           args:
             - ./render.sh
+          env:
+          - name: BRICKLENS_TIMESTAMP
+            value: {{ now | date "2006-01-02T15:04:05" }}
+          - name: BRICKLENS_JOB_ID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
