@@ -38,11 +38,13 @@ def get_all_parts() -> List[Any]:
     parts = []
     # Brick parts.
     import ldraw.library.parts.brick as brick
+    all_bricks = list(brick.__dict__.keys())
+    all_bricks.sort()
 
     parts.extend(
         [
             brick.__dict__[p]
-            for p in brick.__dict__.keys()
+            for p in all_bricks
             # For now, limit to smaller bricks.
             if re.match(r"^Brick[12345678]X[12345678]$", p)
         ]
@@ -54,13 +56,16 @@ def get_all_parts() -> List[Any]:
     #            if re.match(r"^Brick(\d+)X(\d+)X(\d+)$", p)
     #        ]
     #    )
+    parts.sort()
     return parts
 
 
 def get_all_colors() -> List[Colour]:
     retval = []
     # The first 16 are the primary colors.
-    all_colors = list(ColoursByName)[0:15]
+    all_colors = list(ColoursByName)
+    all_colors.sort()
+    all_colors = all_colors[0:15]
     for index in range(len(all_colors)):
         colorname = all_colors[index]
         # These have a special meaning to the LDraw library.
@@ -402,6 +407,7 @@ def gen_dataset(args):
     """Generate the dataset."""
     console.rule("[bold red]Bricklens dataset generator")
     console.log(f"Writing dataset to [red]{args.outdir}[/red]")
+    rng = random.Random(args.seed)   # So we get consistent selection of parts+colors.
 
     if os.path.exists(args.outdir):
         if args.overwrite:
@@ -418,27 +424,21 @@ def gen_dataset(args):
     os.makedirs(os.path.join(args.outdir, "debug_images"), exist_ok=True)
     os.makedirs(os.path.join(args.outdir, "labels"), exist_ok=True)
 
-    all_parts = set(get_all_parts())
-    foreground_parts = set(
-        random.sample(all_parts, min(len(all_parts), args.num_parts))
-    )
-    all_parts -= foreground_parts
-    background_parts = set(
-        random.sample(all_parts, min(len(all_parts), args.background_parts))
-    )
+    # The below is a little convoluted to ensure we get the same set of parts and
+    # colors for the same value of args.seed.
+    all_parts = get_all_parts()
+    foreground_parts = rng.sample(all_parts, min(len(all_parts), args.num_parts))
+    all_parts = list(sorted(set(all_parts) - set(foreground_parts)))
+    background_parts = random.sample(all_parts, min(len(all_parts), args.background_parts))
     console.log(
         f"Using [blue]{len(foreground_parts)}[/blue] foreground and "
         f"[blue]{len(background_parts)}[/blue] background parts."
     )
 
-    all_colors = set(get_all_colors())
-    foreground_colors = set(
-        random.sample(all_colors, min(len(all_colors), args.num_colors))
-    )
-    all_colors -= foreground_colors
-    background_colors = set(
-        random.sample(all_colors, min(len(all_colors), args.background_colors))
-    )
+    all_colors = get_all_colors()
+    foreground_colors = rng.sample(all_colors, min(len(all_colors), args.num_colors))
+    all_colors = list(set(all_colors) - set(foreground_colors))
+    background_colors = random.sample(all_colors, min(len(all_colors), args.background_colors))
     console.log(
         f"Using [blue]{len(foreground_colors)}[/blue] foreground and "
         f"[blue]{len(background_colors)}[/blue] background colors."
@@ -511,6 +511,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--outdir", help="Output directory for generated dataset.", required=True
+    )
+    parser.add_argument(
+        "--seed",
+        help="Random seed used to generate piece and color lists.",
+        type=int,
+        default=42,
     )
     parser.add_argument(
         "--skip_rendering",
