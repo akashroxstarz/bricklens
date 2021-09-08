@@ -7,6 +7,6 @@ build: install
 build-docker: build
   docker build -t gcr.io/bricklens/render:latest -f deploy/docker/Dockerfile.render .
 
-push-docker:
+push-docker: build-docker
   docker push gcr.io/bricklens/render:latest
 

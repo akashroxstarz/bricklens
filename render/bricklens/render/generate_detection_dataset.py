@@ -38,6 +38,7 @@ def get_all_parts() -> List[Any]:
     parts = []
     # Brick parts.
     import ldraw.library.parts.brick as brick
+
     all_bricks = list(brick.__dict__.keys())
     all_bricks.sort()
 
@@ -407,7 +408,7 @@ def gen_dataset(args):
     """Generate the dataset."""
     console.rule("[bold red]Bricklens dataset generator")
     console.log(f"Writing dataset to [red]{args.outdir}[/red]")
-    rng = random.Random(args.seed)   # So we get consistent selection of parts+colors.
+    rng = random.Random(args.seed)  # So we get consistent selection of parts+colors.
 
     if os.path.exists(args.outdir):
         if args.overwrite:
@@ -429,7 +430,9 @@ def gen_dataset(args):
     all_parts = get_all_parts()
     foreground_parts = rng.sample(all_parts, min(len(all_parts), args.num_parts))
     all_parts = list(sorted(set(all_parts) - set(foreground_parts)))
-    background_parts = random.sample(all_parts, min(len(all_parts), args.background_parts))
+    background_parts = random.sample(
+        all_parts, min(len(all_parts), args.background_parts)
+    )
     console.log(
         f"Using [blue]{len(foreground_parts)}[/blue] foreground and "
         f"[blue]{len(background_parts)}[/blue] background parts."
@@ -438,7 +441,9 @@ def gen_dataset(args):
     all_colors = get_all_colors()
     foreground_colors = rng.sample(all_colors, min(len(all_colors), args.num_colors))
     all_colors = list(set(all_colors) - set(foreground_colors))
-    background_colors = random.sample(all_colors, min(len(all_colors), args.background_colors))
+    background_colors = random.sample(
+        all_colors, min(len(all_colors), args.background_colors)
+    )
     console.log(
         f"Using [blue]{len(foreground_colors)}[/blue] foreground and "
         f"[blue]{len(background_colors)}[/blue] background colors."
@@ -460,6 +465,9 @@ def gen_dataset(args):
 
     for index in range(args.num_images):
         console.rule(f"[green]Image {index}/{args.num_images-1}")
+
+        detections_size = int(random.uniform(args.detections_min, args.detections_max+1))
+        pile_size = int(random.uniform(args.pile_min, args.pile_max+1))
         dsimage = gen_dataset_image(
             index,
             args.num_images,
@@ -467,8 +475,8 @@ def gen_dataset(args):
             foreground_colors,
             background_parts,
             background_colors,
-            args.detections_size,
-            args.pile_size,
+            detections_size,
+            pile_size,
             args.outdir,
             args.width,
             args.height,
@@ -567,14 +575,26 @@ def main():
         type=int,
     )
     parser.add_argument(
-        "--detections_size",
-        help="Total number of parts to be detected in each image.",
-        default=10,
+        "--detections_min",
+        help="Min number of parts to be detected in each image.",
+        default=1,
         type=int,
     )
     parser.add_argument(
-        "--pile_size",
-        help="Total number of parts in background pile.",
+        "--detections_max",
+        help="Max number of parts to be detected in each image.",
+        default=20,
+        type=int,
+    )
+    parser.add_argument(
+        "--pile_min",
+        help="Min number of parts in background pile.",
+        default=5,
+        type=int,
+    )
+    parser.add_argument(
+        "--pile_max",
+        help="Max number of parts in background pile.",
         default=200,
         type=int,
     )

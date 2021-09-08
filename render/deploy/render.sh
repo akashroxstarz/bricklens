@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script run by each K8s Job.
+# This script is run inside of the K8s Job container.
 
 set -eux
 
@@ -13,7 +13,15 @@ python3 -m bricklens.render.generate_detection_dataset \
   --ldraw_library_path /ldraw \
   --outdir /dataset \
   --overwrite \
-  --num_images 2
+  --num_images 1000 \
+  --num_parts 4 \
+  --num_colors 10 \
+  --background_parts 4 \
+  --background_colors 4 \
+  --detections_min 1 \
+  --detections_max 20 \
+  --pile_min 5 \
+  --pile_max 200
 
 echo "Copying data to GCS..."
 
