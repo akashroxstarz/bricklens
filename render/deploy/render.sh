@@ -13,7 +13,7 @@ python3 -m bricklens.render.generate_detection_dataset \
   --ldraw_library_path /ldraw \
   --outdir /dataset \
   --overwrite \
-  --num_images 1000 \
+  --num_images 10 \
   --num_parts 4 \
   --num_colors 10 \
   --background_parts 4 \

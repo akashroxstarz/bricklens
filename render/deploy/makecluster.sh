@@ -8,8 +8,18 @@ gcloud config set project bricklens
 gcloud config set compute/zone us-west1-a
 gcloud config set compute/region us-west1
 
-# This makes a standard cluster.
-# gcloud container clusters create bricklens-cluster --num-nodes=1
+# Required to enable private clusters to get Internet access.
+gcloud compute routers create bricklens-nat-router \
+    --project=bricklens \
+    --network projects/bricklens/global/networks/default \
+    --region us-west1
+
+gcloud compute routers nats create bricklens-nat-config \
+    --project=bricklens \
+    --region us-west1 \
+    --router bricklens-nat-router \
+    --nat-all-subnet-ip-ranges \
+    --auto-allocate-nat-external-ips
 
 gcloud beta container \
   --project "bricklens" \
@@ -18,8 +28,9 @@ gcloud beta container \
   --release-channel "regular" \
   --network "projects/bricklens/global/networks/default" \
   --subnetwork "projects/bricklens/regions/us-west1/subnetworks/default" \
-  --cluster-ipv4-cidr "/17" \
-  --services-ipv4-cidr "/22"
+  --enable-private-nodes
+#  --cluster-ipv4-cidr "/17" \
+#  --services-ipv4-cidr "/22"
 
 gcloud container clusters get-credentials bricklens-cluster --region us-west1
 kubectl config use-context gke_bricklens_us-west1_bricklens-cluster

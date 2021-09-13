@@ -11,7 +11,9 @@ kubectl config use-context gke_bricklens_us-west1_bricklens-cluster
 # Create namespace.
 export KUBE_NAMESPACE="bricklens-render"
 
-kubectl delete namespace "$KUBE_NAMESPACE"
+if kubectl get namespace "$KUBE_NAMESPACE"; then
+    kubectl delete namespace "$KUBE_NAMESPACE"
+fi
 
 if ! kubectl get namespace "$KUBE_NAMESPACE"; then
     echo "Creating namespace: $KUBE_NAMESPACE"
