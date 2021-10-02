@@ -1,4 +1,10 @@
+install-deps:
+
 install:
+  # The following is needed due to issues with the latest setuptools.
+  # See: https://github.com/python-poetry/poetry/issues/1584
+  # Poetry 1.20.0 should fix this problem.
+  poetry run pip install -U setuptools==57
   poetry install
 
 build: install

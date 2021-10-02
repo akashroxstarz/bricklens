@@ -16,3 +16,4 @@ google-cloud-storage = "^1.42.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^3.4"
+setuptools = "57.5.0"
