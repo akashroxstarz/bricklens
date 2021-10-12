@@ -382,7 +382,9 @@ def write_dataset(images: List[DatasetImage], outdir: str, outfile: str):
             img_fname = os.path.basename(img.image_fname)  # image_00000.png
             fname_base, _ = os.path.splitext(img_fname)  # image_00000
             label_fname = f"{fname_base}.txt"  # image_00000.txt
-            outfile.write(f"images/{img_fname} labels/{label_fname}\n")
+            # Note that the label filename will be inferred from the image filename by
+            # the training code.
+            outfile.write(f"images/{img_fname}\n")
             with open(os.path.join(outdir, "labels", label_fname), "w") as labelfile:
                 for category, bbox in img.annotations:
                     left, upper, right, lower = bbox
@@ -466,8 +468,10 @@ def gen_dataset(args):
     for index in range(args.num_images):
         console.rule(f"[green]Image {index}/{args.num_images-1}")
 
-        detections_size = int(random.uniform(args.detections_min, args.detections_max+1))
-        pile_size = int(random.uniform(args.pile_min, args.pile_max+1))
+        detections_size = int(
+            random.uniform(args.detections_min, args.detections_max + 1)
+        )
+        pile_size = int(random.uniform(args.pile_min, args.pile_max + 1))
         dsimage = gen_dataset_image(
             index,
             args.num_images,

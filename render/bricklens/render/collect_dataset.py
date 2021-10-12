@@ -16,7 +16,6 @@ from rich.progress import Progress
 from rich.spinner import Spinner
 
 
-
 console = Console()
 
 
@@ -99,6 +98,14 @@ def copy_file(input_path: str, output_path: str) -> str:
         source_bucket.copy_blob(source_blob, destination_bucket, outpath)
 
 
+def image_path_to_label_path(image_path: str) -> str:
+    sa, sb = (
+        os.sep + "images" + os.sep,
+        os.sep + "labels" + os.sep,
+    )  # /images/, /labels/ substrings
+    return image_path.replace(sa, sb, 1).replace("." + x.split(".")[-1], ".txt")
+
+
 def collect_dataset(input_path: str, output_path: str):
     """Collect the dataset stored at the given input path and write the merged
     dataset to the output path."""
@@ -137,8 +144,8 @@ def collect_dataset(input_path: str, output_path: str):
             label_files, _ = list_folder(os.path.join(shard, "labels"))
 
         # Process train.txt.
-        for train_line in track(train_txt.splitlines(), description="train files..."):
-            image_path, label_path = train_line.split()
+        for image_path in track(train_txt.splitlines(), description="train files..."):
+            label_path = image_path_to_label_path(image_path)
 
             # Copy the image file.
             image_dir, image_filename = os.path.split(image_path)
@@ -159,11 +166,11 @@ def collect_dataset(input_path: str, output_path: str):
             dest_label = os.path.join(label_dir, f"shard_{index:05d}_{label_filename}")
             copy_file(src_label, os.path.join(output_path, dest_label))
 
-            train_out += f"{dest_image} {dest_label}\n"
+            train_out += f"{dest_image}\n"
 
         # Process val.txt.
-        for val_line in track(val_txt.splitlines(), description="val files..."):
-            image_path, label_path = val_line.split()
+        for image_path in track(val_txt.splitlines(), description="val files..."):
+            label_path = image_path_to_label_path(image_path)
 
             # Copy the image file.
             image_dir, image_filename = os.path.split(image_path)
@@ -184,7 +191,7 @@ def collect_dataset(input_path: str, output_path: str):
             dest_label = os.path.join(label_dir, f"shard_{index:05d}_{label_filename}")
             copy_file(src_label, os.path.join(output_path, dest_label))
 
-            val_out += f"{dest_image} {dest_label}\n"
+            val_out += f"{dest_image}\n"
 
         # Process debug images.
         for debug_image_file in track(debug_image_files, description="debug_images..."):
