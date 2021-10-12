@@ -57,12 +57,22 @@ def blender_render(blender_file: str, output_file: str):
                 "-f",
                 "1",
                 # Uncomment the following to use CUDA.
-                "--", "--cycles-device", "CUDA",
+                #"--",
+                #"--cycles-device",
+                #"CUDA",
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        os.rename(os.path.join(tmpdir, "img_0001.png"), output_file)
+        rendered = os.path.join(tmpdir, "img_0001.png")
+        if not os.path.exists(rendered):
+            print(f"WARNING! Cannot find rendered image {rendered}")
+            print(os.listdir(tmpdir))
+            raise RuntimeError(f"Rendered image {rendered} is missing")
+        else:
+            print(f"MDW: RENAMING {rendered} to {output_file}")
+            os.rename(rendered, output_file)
+
 
 def render_ldr(
     ldr_file: str, output_file: str, template_file: str, ldraw_library_path: str

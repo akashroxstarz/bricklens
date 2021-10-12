@@ -1,7 +1,7 @@
 image:
   repository: gcr.io/bricklens/render
   tag: latest
-  pullPolicy: IfNotPresent
+  pullPolicy: Always  # Force image pull
 
 imagePullSecrets:
   - name: gcr-image-pull-token
