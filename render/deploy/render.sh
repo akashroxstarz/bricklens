@@ -13,9 +13,9 @@ python3 -m bricklens.render.generate_detection_dataset \
   --ldraw_library_path /ldraw \
   --outdir /dataset \
   --overwrite \
-  --num_images 10 \
-  --num_parts 4 \
-  --num_colors 10 \
+  --num_images 100 \
+  --num_parts 10 \
+  --num_colors 4 \
   --background_parts 4 \
   --background_colors 4 \
   --detections_min 1 \
