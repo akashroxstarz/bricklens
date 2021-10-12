@@ -1,3 +1,0 @@
-train: detection_simple_100/train.txt
-val: detection_simple_100/val.txt
-classes: detection_simple_100/classes.txt
