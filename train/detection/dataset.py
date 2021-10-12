@@ -15,7 +15,8 @@ from torch.utils.data import Dataset
 
 class ListDataset(Dataset):
     """Dataset loader for a simple dataset format. The dataset is described with a text file,
-    consisting of a list of full image pathnames, one per row.
+    with each row having the format:
+      <image-filename> <label-filename>
     """
 
     def __init__(

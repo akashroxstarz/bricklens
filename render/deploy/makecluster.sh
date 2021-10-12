@@ -24,9 +24,9 @@ gcloud compute routers nats create bricklens-nat-config \
 gcloud beta container \
   --project "bricklens" \
   clusters create-auto "bricklens-cluster" \
-  --region "us-west1" \
   --release-channel "regular" \
   --network "projects/bricklens/global/networks/default" \
+  --region "us-west1" \
   --subnetwork "projects/bricklens/regions/us-west1/subnetworks/default" \
   --enable-private-nodes
 #  --cluster-ipv4-cidr "/17" \
