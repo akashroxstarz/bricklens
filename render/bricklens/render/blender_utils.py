@@ -70,7 +70,6 @@ def blender_render(blender_file: str, output_file: str):
             print(os.listdir(tmpdir))
             raise RuntimeError(f"Rendered image {rendered} is missing")
         else:
-            print(f"MDW: RENAMING {rendered} to {output_file}")
             os.rename(rendered, output_file)
 
 

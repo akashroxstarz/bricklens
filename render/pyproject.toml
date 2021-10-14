@@ -13,6 +13,7 @@ Pillow = "^7.2.0"
 pyldraw = { git = "https://github.com/mdwelsh/python-ldraw", branch = "master" }
 rich = "^10.4.0"
 google-cloud-storage = "^1.42.1"
+wandb = "^0.10.12"
 
 [tool.poetry.dev-dependencies]
 pytest = "^3.4"

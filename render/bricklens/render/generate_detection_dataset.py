@@ -21,6 +21,7 @@ from ldraw.writers.povray import POVRayWriter
 from PIL import Image, ImageDraw
 from rich.console import Console
 import rich.progress
+import wandb
 
 import bricklens.render.blender_utils as blender_utils
 
@@ -285,7 +286,7 @@ def gen_dataset_image(
             piece_name = f"{part}_{color.name}"
             assert (
                 piece_name in classes
-            ), f"Output classe list does not contain piece name {piece_name}: {classes}"
+            ), f"Output class list does not contain piece name {piece_name}: {classes}"
             classid = classes.index(piece_name)
 
             # Render it solo and get its bounding box. Note that this can fail
@@ -313,6 +314,7 @@ def gen_dataset_image(
                 continue
             annotations.append((str(classid), bbox))
             foreground_pieces.append(piece)
+            wandb.log({"foreground_pieces_generated": piece_index+1})
 
     with console.status("[green]Rendering..."):
         pile = gen_pile(background_parts, background_colors, pile_size)
@@ -499,6 +501,12 @@ def gen_dataset(args):
         )
         img.save(outfile)
 
+        wandb.log({"images_rendered": index + 1})
+        # Log sample images to WandB.
+        if index == 0:
+            wandb.log({"image": wandb.Image(dsimage.image_fname)})
+            wandb.log({"debug_image": wandb.Image(outfile)})
+
     # Generate train/val split.
     assert 0.0 < args.frac_train_images <= 1.0
     split = int(len(all_images) * args.frac_train_images)
@@ -619,9 +627,27 @@ def main():
         help="Path to LDRAW library",
         required=True,
     )
+    parser.add_argument(
+        "--bricklens_group",
+        type=str,
+        default="bricklens-group",
+        help="Experiment group for WandB logging.",
+    )
+    parser.add_argument(
+        "--bricklens_job",
+        type=str,
+        default="bricklens-job",
+        help="Job ID for WandB logging.",
+    )
 
     args = parser.parse_args()
 
+    wandb.init(
+        project="bricklens-render",
+        group=args.bricklens_group,
+        name=args.bricklens_job,
+        config=args,
+    )
     gen_dataset(args)
 
 
