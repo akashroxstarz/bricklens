@@ -29,8 +29,9 @@ python3 -m bricklens.render.generate_detection_dataset \
 
 echo "Copying data to GCS..."
 
-gsutil cp -r \
+gsutil -m cp -r \
   /dataset \
   gs://bricklens-datasets/renders/${BRICKLENS_TIMESTAMP}/${BRICKLENS_JOB_ID}/
 
 echo "Done."
+exit 0

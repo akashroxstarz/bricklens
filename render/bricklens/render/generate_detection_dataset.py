@@ -8,6 +8,7 @@ import os
 import random
 import re
 import subprocess
+import sys
 import tempfile
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -653,3 +654,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    sys.exit(0)
