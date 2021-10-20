@@ -5,7 +5,7 @@ metadata:
 spec:
   parallelism: {{ .Values.parallelism }}
   completions: {{ .Values.parallelism }}
-  backoffLimit: 4
+  backoffLimit: 0
   template:
     metadata:
       annotations:
